@@ -1,0 +1,10 @@
+<Orders>
+    <Order>
+        <Client NameId="ClientA"/>
+        <Order Number="001" WorkPiece="P5" Quantity="50" DueDate="10" LatePen="5" EarlyPen="3"/>
+    </Order>
+    <Order>
+        <Client NameId="ClientB"/>
+        <Order Number="002" WorkPiece="P7" Quantity="30" DueDate="15" LatePen="7" EarlyPen="4"/>
+    </Order>
+</Orders>
