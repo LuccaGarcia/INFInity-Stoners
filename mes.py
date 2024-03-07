@@ -1,7 +1,10 @@
 import xml.etree.ElementTree as ET
-import sys
 import psycopg2
+from dotenv import load_dotenv
+import os
 
+# Load .env file
+load_dotenv()
 
 # Function to parse XML file and extract order data
 def parse_xml(xml_file):
@@ -22,22 +25,39 @@ def parse_xml(xml_file):
     
     return orders
 
-connection_string = "postgresql://LuccaGarcia:sAgf5iV4Goet@ep-rough-cell-a2on0f0y-pooler.eu-central-1.aws.neon.tech/michal?sslmode=require"
-
-try:
-    # Establish a connection to the database
-    conn = psycopg2.connect(connection_string)
-    print("Connection to PostgreSQL database successful.")
-
-    # Close the connection
-    conn.close()
-    print("Connection closed.")
-except psycopg2.Error as e:
-    print("Error: Unable to connect to the PostgreSQL database:", e)
+# Function to insert parsed data into PostgreSQL database
+def insert_into_postgresql(orders):
+    try:
+        # Get the connection string from the environment variable
+        connection_string = os.getenv('DATABASE_URL')
+        # Connect to the PostgreSQL database
+        conn = psycopg2.connect(connection_string)
+        print("Connection to PostgreSQL database successful.")
+        
+        # Create a cursor object
+        cur = conn.cursor()
+        
+        # Create table if not exists
+        cur.execute('''CREATE TABLE IF NOT EXISTS Orders
+                     (ClientNameId TEXT, OrderNumber TEXT, WorkPiece TEXT, Quantity INTEGER,
+                     DueDate INTEGER, LatePenalty REAL, EarlyPenalty REAL)''')
+        
+        # Insert data into the table
+        cur.executemany('INSERT INTO Orders VALUES (%s, %s, %s, %s, %s, %s, %s)', orders)
+        conn.commit()
+        
+        print("Orders inserted into the PostgreSQL database successfully.")
+    except psycopg2.Error as e:
+        print("Error: Unable to connect to the PostgreSQL database:", e)
+    finally:
+        # Close the cursor and connection
+        if cur is not None:
+            cur.close()
+        if conn is not None:
+            conn.close()
+            print("Connection closed.")
 
 if __name__ == '__main__':
-    xml_file =  r'C:\Users\79996\Documents\GitHub\INFInity-Stoners\orders.xml'
+    xml_file = r'orders.xml'
     orders = parse_xml(xml_file)
     insert_into_postgresql(orders)
-    print("Orders inserted into the PostgreSQL database successfully.")
-
