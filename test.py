@@ -5,9 +5,7 @@ from dotenv import load_dotenv
 # Load .env file
 load_dotenv()
 # Get the connection string from the environment variable
-connection_string = os.getenv('DATABASE_URL')
-# Connect to the Postgres database
-conn = psycopg2.connect(connection_string)
+conn = psycopg2.connect(database="postgres", user = "LuccaGarcia", password = "corno", host = "34.175.19.58")
 # Create a cursor object
 cur = conn.cursor()
 # Execute SQL commands to retrieve the current time and version from PostgreSQL
