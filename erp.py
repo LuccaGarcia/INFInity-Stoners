@@ -28,12 +28,18 @@ def parse_xml(xml_file):
 # Function to insert parsed data into PostgreSQL database
 def insert_into_postgresql(orders):
     try:
-        # Get the connection string from the environment variable
-        connection_string = os.getenv('DATABASE_URL')
+        # Define connection parameters
+        DATABASE_NAME = "postgres"
+        DATABASE_USER = "postgres"
+        DATABASE_PASSWORD = "postgres"
+        DATABASE_HOST = "34.175.19.58"
+        
+        # Construct the connection string
+        connection_string = f"dbname='{DATABASE_NAME}' user='{DATABASE_USER}' password='{DATABASE_PASSWORD}' host='{DATABASE_HOST}'"
+
         # Connect to the PostgreSQL database
         conn = psycopg2.connect(connection_string)
         print("Connection to PostgreSQL database successful.")
-        
         # Create a cursor object
         cur = conn.cursor()
         
@@ -61,3 +67,4 @@ if __name__ == '__main__':
     xml_file = r'orders.xml'
     orders = parse_xml(xml_file)
     insert_into_postgresql(orders)
+
