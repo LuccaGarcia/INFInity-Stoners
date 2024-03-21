@@ -29,24 +29,27 @@ def parse_xml(xml_file):
 def insert_into_postgresql(orders):
     try:
         # Define connection parameters
-        DATABASE_NAME = "postgres"
-        DATABASE_USER = "postgres"
-        DATABASE_PASSWORD = "postgres"
-        DATABASE_HOST = "34.175.19.58"
-        
-        # Construct the connection string
-        connection_string = f"dbname='{DATABASE_NAME}' user='{DATABASE_USER}' password='{DATABASE_PASSWORD}' host='{DATABASE_HOST}'"
+        database = os.getenv('DATABASE_NAME')
+        user = os.getenv('DATABASE_USER')
+        password = os.getenv('DATABASE_PASSWORD')
+        host = os.getenv('DATABASE_HOST')
 
-        # Connect to the PostgreSQL database
-        conn = psycopg2.connect(connection_string)
+        conn = psycopg2.connect(database=database, user=user, password=password, host=host)
         print("Connection to PostgreSQL database successful.")
         # Create a cursor object
         cur = conn.cursor()
         
         # Create table if not exists
-        cur.execute('''CREATE TABLE IF NOT EXISTS Orders
-                     (ClientNameId TEXT, OrderNumber TEXT, WorkPiece TEXT, Quantity INTEGER,
-                     DueDate INTEGER, LatePenalty REAL, EarlyPenalty REAL)''')
+        cur.execute('''--begin-sql
+                    CREATE TABLE IF NOT EXISTS Orders(
+                    ClientNameId TEXT,
+                    OrderNumber TEXT,
+                    WorkPiece TEXT,
+                    Quantity INTEGER,
+                    DueDate INTEGER,
+                    LatePenalty REAL,
+                    EarlyPenalty REAL)
+                    --end-sql''')
         
         # Insert data into the table
         cur.executemany('INSERT INTO Orders VALUES (%s, %s, %s, %s, %s, %s, %s)', orders)
