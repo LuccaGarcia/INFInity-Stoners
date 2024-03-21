@@ -2,6 +2,7 @@ import xml.etree.ElementTree as ET
 import psycopg2
 from dotenv import load_dotenv
 import os
+import time
 
 # Load .env file
 load_dotenv()
@@ -21,11 +22,16 @@ def parse_xml(xml_file):
         late_penalty = float(order.find('Order').attrib['LatePen'])
         early_penalty = float(order.find('Order').attrib['EarlyPen'])
         
-        orders.append((client_name_id, order_number, work_piece, quantity, due_date, late_penalty, early_penalty))
+        # Get current time in seconds and calculate adjusted due date
+        current_time = int(time.time())
+        adjusted_due_date = current_time + (due_date * 60)
+        
+        orders.append((client_name_id, order_number, work_piece, quantity, due_date, late_penalty, early_penalty, current_time, adjusted_due_date))
     
     return orders
 
-# Function to insert parsed data into PostgreSQL database
+
+# Function to insert parsed data into PostgreSQL database 
 def insert_into_postgresql(orders):
     try:
         # Define connection parameters
@@ -40,16 +46,18 @@ def insert_into_postgresql(orders):
         # Connect to the PostgreSQL database
         conn = psycopg2.connect(connection_string)
         print("Connection to PostgreSQL database successful.")
+        
         # Create a cursor object
         cur = conn.cursor()
         
         # Create table if not exists
         cur.execute('''CREATE TABLE IF NOT EXISTS Orders
-                     (ClientNameId TEXT, OrderNumber TEXT, WorkPiece TEXT, Quantity INTEGER,
-                     DueDate INTEGER, LatePenalty REAL, EarlyPenalty REAL)''')
+                     (ClientNameId TEXT, OrderNumber TEXT UNIQUE, WorkPiece TEXT, Quantity INTEGER,
+                     DueDate INTEGER, LatePenalty REAL, EarlyPenalty REAL, CurrentTime INTEGER, AdjustedDueDate INTEGER)''')
         
         # Insert data into the table
-        cur.executemany('INSERT INTO Orders VALUES (%s, %s, %s, %s, %s, %s, %s)', orders)
+        cur.executemany('''INSERT INTO Orders (ClientNameId, OrderNumber, WorkPiece, Quantity, DueDate, LatePenalty, EarlyPenalty, CurrentTime, AdjustedDueDate)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)''', orders)
         conn.commit()
         
         print("Orders inserted into the PostgreSQL database successfully.")
@@ -57,9 +65,9 @@ def insert_into_postgresql(orders):
         print("Error: Unable to connect to the PostgreSQL database:", e)
     finally:
         # Close the cursor and connection
-        if cur is not None:
+        if 'cur' in locals() and cur is not None:
             cur.close()
-        if conn is not None:
+        if 'conn' in locals() and conn is not None:
             conn.close()
             print("Connection closed.")
 
@@ -67,4 +75,3 @@ if __name__ == '__main__':
     xml_file = r'orders.xml'
     orders = parse_xml(xml_file)
     insert_into_postgresql(orders)
-
