@@ -42,18 +42,35 @@ def insert_into_postgresql(orders):
         
         # Construct the connection string
         connection_string = f"dbname='{DATABASE_NAME}' user='{DATABASE_USER}' password='{DATABASE_PASSWORD}' host='{DATABASE_HOST}'"
+        database = os.getenv('DATABASE_NAME')
+        user = os.getenv('DATABASE_USER')
+        password = os.getenv('DATABASE_PASSWORD')
+        host = os.getenv('DATABASE_HOST')
 
-        # Connect to the PostgreSQL database
         conn = psycopg2.connect(connection_string)
+        conn = psycopg2.connect(database=database, user=user, password=password, host=host)
         print("Connection to PostgreSQL database successful.")
         
         # Create a cursor object
         cur = conn.cursor()
         
         # Create table if not exists
+<<<<<<< HEAD
         cur.execute('''CREATE TABLE IF NOT EXISTS Orders
                      (ClientNameId TEXT, OrderNumber TEXT UNIQUE, WorkPiece TEXT, Quantity INTEGER,
                      DueDate INTEGER, LatePenalty REAL, EarlyPenalty REAL, CurrentTime INTEGER, AdjustedDueDate INTEGER)''')
+=======
+        cur.execute('''--begin-sql
+                    CREATE TABLE IF NOT EXISTS Orders(
+                    ClientNameId TEXT,
+                    OrderNumber TEXT,
+                    WorkPiece TEXT,
+                    Quantity INTEGER,
+                    DueDate INTEGER,
+                    LatePenalty REAL,
+                    EarlyPenalty REAL)
+                    --end-sql''')
+>>>>>>> 51aca0eff4053f21ac36c077763bb87f143bbc13
         
         # Insert data into the table
         cur.executemany('''INSERT INTO Orders (ClientNameId, OrderNumber, WorkPiece, Quantity, DueDate, LatePenalty, EarlyPenalty, CurrentTime, AdjustedDueDate)
