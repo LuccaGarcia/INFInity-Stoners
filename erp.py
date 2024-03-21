@@ -55,11 +55,6 @@ def insert_into_postgresql(orders):
         cur = conn.cursor()
         
         # Create table if not exists
-<<<<<<< HEAD
-        cur.execute('''CREATE TABLE IF NOT EXISTS Orders
-                     (ClientNameId TEXT, OrderNumber TEXT UNIQUE, WorkPiece TEXT, Quantity INTEGER,
-                     DueDate INTEGER, LatePenalty REAL, EarlyPenalty REAL, CurrentTime INTEGER, AdjustedDueDate INTEGER)''')
-=======
         cur.execute('''--begin-sql
                     CREATE TABLE IF NOT EXISTS Orders(
                     ClientNameId TEXT,
@@ -68,9 +63,10 @@ def insert_into_postgresql(orders):
                     Quantity INTEGER,
                     DueDate INTEGER,
                     LatePenalty REAL,
-                    EarlyPenalty REAL)
+                    EarlyPenalty REAL,
+                    CurrentTime INTEGER,
+                    AdjustedDueDate INTEGER)
                     --end-sql''')
->>>>>>> 51aca0eff4053f21ac36c077763bb87f143bbc13
         
         # Insert data into the table
         cur.executemany('''INSERT INTO Orders (ClientNameId, OrderNumber, WorkPiece, Quantity, DueDate, LatePenalty, EarlyPenalty, CurrentTime, AdjustedDueDate)
