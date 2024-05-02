@@ -10,10 +10,10 @@ def define_epoch():
 define_epoch()
 
 while True:
-    print(time() - EPOCH)
+    # print(time() - EPOCH)
     
     day = int((time() - EPOCH) // DAY_LENGTH) + 1 
-    seconds = (time() - EPOCH) % DAY_LENGTH
+    seconds = int((time() - EPOCH) % DAY_LENGTH)
     
     print(f"Day: {day}, Seconds: {seconds}")
     sleep(1)
