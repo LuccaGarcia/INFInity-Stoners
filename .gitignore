@@ -2,3 +2,5 @@
 .env
 /.venv
 .pyc
+src/erp/utils/__pycache__/__init__.cpython-312.pyc
+/src/erp/utils/__pycache__
