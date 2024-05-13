@@ -5,6 +5,7 @@ import os
 import time
 import sys
 from utils.Utils import connect_to_postgresql
+from warehouse.warehouse import *
 import asyncio
 import socket
 import threading
@@ -41,9 +42,7 @@ def handle_xml(xml_data, conn):
     This function processes XML data and performs database operations.
     """
     try:
-        
         # Parse the XML data
-
         # Extract client information
         client = xml_data.find('Client')
         client_name = client.attrib['NameId']
@@ -67,13 +66,15 @@ def handle_xml(xml_data, conn):
 
             # Insert data into the database
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO orders (client_name, order_number, quantity, final_piece_type, due_date, late_penalty, early_penalty, placement_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                        (client_name, order_number, quantity, work_piece, due_date, late_penalty, early_penalty, CURRENT_DAY))
+            cursor.execute("INSERT INTO orders (client_name, order_number, quantity, final_piece_type, due_date, late_penalty, early_penalty, placement_date, delivery_status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        (client_name, order_number, quantity, work_piece, due_date, late_penalty, early_penalty, CURRENT_DAY, 'Incoming'))
             conn.commit()
+            
+            
             print("Data inserted successfully.")
     except (psycopg2.Error, AttributeError) as e:
         print(f"Error inserting data: {e}")
-
+    
 def setEpoch(conn):
     cur = conn.cursor()
     #read the epoch from the database if it exists
@@ -98,6 +99,34 @@ def updateDay():
     global CURRENT_DAY
     CURRENT_DAY = int((time.time() - EPOCH) // DAY_LENGTH) + 1
 
+def processOrders(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM orders WHERE delivery_status = 'Incoming';")
+    orders = cur.fetchall()
+    
+    requiredP1 = 0
+    requiredP2 = 0
+    
+    for order in orders:
+        #if the order is due
+        if order [3] <=7:
+            requiredP1 += order[4]
+        else:
+            requiredP2 += order[4] 
+        
+        #update the order status	
+        cur.execute("UPDATE orders SET delivery_status = 'To order' WHERE order_id = %s;", (order[0],))
+        conn.commit()
+    
+    if requiredP1 > getFreePieces(conn, 1):
+        print("Not enough P1 pieces")
+        placeBuyorder(conn, 1, requiredP1, CURRENT_DAY)
+    if requiredP2 > getFreePieces(conn, 2):
+        print("Not enough P2 pieces")
+    
+    cur.close()
+
+
 def main():
     conn = connect_to_postgresql()
     
@@ -116,6 +145,7 @@ def main():
     while True:
         
         updateDay()
+        processOrders(conn)
         
         try:
             # Get data from the queue (blocks until data is available)
@@ -124,6 +154,8 @@ def main():
         except queue.Empty:
             # Handle situations where no data is available in the queue (optional)
             pass
+        
+        time.sleep(1)
     
 
 if __name__ == '__main__':

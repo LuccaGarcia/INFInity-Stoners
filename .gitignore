@@ -4,3 +4,6 @@
 .pyc
 src/erp/utils/__pycache__/__init__.cpython-312.pyc
 /src/erp/utils/__pycache__
+src/erp/warehouse/__init__.py
+src/erp/warehouse/__pycache__/__init__.cpython-312.pyc
+src/erp/warehouse/__pycache__/warehouse.cpython-312.pyc
