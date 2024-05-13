@@ -1,11 +1,11 @@
 CREATE TABLE IF NOT EXISTS
-  Machine_operations( 
+  Operations( 
     operation_id SERIAL PRIMARY KEY,
     machine_type INTEGER NOT NULL,
     tool INTEGER NOT NULL);
 
 INSERT INTO
-    Machine_operations (
+    Operations (
         machine_type,
         tool)
 VALUES

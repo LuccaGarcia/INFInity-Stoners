@@ -10,6 +10,11 @@ user = os.getenv('DATABASE_USER')
 password = os.getenv('DATABASE_PASSWORD')
 host = os.getenv('DATABASE_HOST')
 
+print('Connecting to the PostgreSQL database...')
+print('Database:', database)
+print('User:', user)
+print('Host:', host)
+
 conn = psycopg2.connect(database=database, user=user, password=password, host=host)
 # Create a cursor object
 cur = conn.cursor()
