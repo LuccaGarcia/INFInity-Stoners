@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS Orders(
     late_penalty INTEGER NOT NULL,
     early_penalty INTEGER NOT NULL,
     delivery_date INTEGER,
-    delivery_status VARCHAR(255); 
-)
+    delivery_status VARCHAR(255) 
+);
