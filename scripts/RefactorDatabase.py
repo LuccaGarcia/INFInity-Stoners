@@ -47,7 +47,6 @@ def create_tables(conn):
     except psycopg2.Error as e:
         print("Error: Unable to create tables in the PostgreSQL database:", e)
  
- 
 def main():
     conn = connect_to_postgresql(superuser=True)
     conn.autocommit = True
