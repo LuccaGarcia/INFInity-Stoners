@@ -48,6 +48,9 @@ def create_tables(conn):
         print("Error: Unable to create tables in the PostgreSQL database:", e)
  
 def main():
+    # Load .env file
+    load_dotenv()
+
     conn = connect_to_postgresql(superuser=True)
     conn.autocommit = True
     cur = conn.cursor()
