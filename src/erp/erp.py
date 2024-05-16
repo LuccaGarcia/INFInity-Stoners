@@ -20,6 +20,9 @@ EPOCH = 0
 CURRENT_DAY = 0
 DAY_LENGTH = 60
 
+# Load .env file
+load_dotenv()
+
 def udp_listener_and_parser(host, port, queue):
   """
   This function listens for UDP messages on a specified host and port.
