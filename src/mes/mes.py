@@ -2,8 +2,11 @@ from utils.Utils import connect_to_postgresql
 from opcua import Client
 import time
 from opcua import ua
+from dotenv import load_dotenv
 
 
+# Load .env file
+load_dotenv()
 
 EPOCH = 0
 CURRENT_DAY = 0
@@ -81,7 +84,7 @@ def look_for_pieces_toSpawn(conn):
         print("Spawning piece ", piece[0])
         #spawn_piece(piece[1])#piece[1] = piece_type
 
-        cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE piece_id = %s;", (piece[0], ))
+        cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
         conn.commit()
 
     cur.close()
