@@ -18,6 +18,7 @@ PORT = 5000
 
 EPOCH = 0
 CURRENT_DAY = 0
+CURRENT_SECONDS = 0
 DAY_LENGTH = 60
 
 # Load .env file
@@ -110,8 +111,10 @@ def setEpoch(conn):
 
 def updateDay():
     global CURRENT_DAY
+    global CURRENT_SECONDS
     CURRENT_DAY = int((time.time() - EPOCH) // DAY_LENGTH) + 1
-
+    CURRENT_SECONDS = int((time.time() - EPOCH) % DAY_LENGTH)
+    
 def checkAndPlaceBuyOrder(conn):
     cur = conn.cursor()
     cur.execute("SELECT * FROM orders WHERE delivery_status = 'Incoming';")
@@ -160,11 +163,14 @@ def main():
         
         checkAndPlaceBuyOrder(conn)
         
-        
+        setPiecesToSpawn(conn, CURRENT_DAY)
 
+        createAndPlaceSpawnedPiecesInWarehouse(conn)
         
         updateDay()
         time.sleep(1)
+        print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
+        
     
 
 if __name__ == '__main__':
