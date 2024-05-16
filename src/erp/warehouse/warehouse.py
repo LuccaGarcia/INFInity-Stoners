@@ -61,10 +61,6 @@ def createAndPlaceSpawnedPiecesInWarehouse(conn):
     cur = conn.cursor()
     cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned';")
     
-    #TODO: mark piece as alocated if order_id is not null
-    
-    
-    
     for incoming_piece in cur.fetchall():
         
         print( incoming_piece)

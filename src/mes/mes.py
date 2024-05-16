@@ -12,6 +12,7 @@ EPOCH = 0
 CURRENT_DAY = 0
 CURRENT_SECONDS = 0
 DAY_LENGTH = 60
+LAST_SECOND = -1
 
 
 def setEpoch(conn):
@@ -39,14 +40,22 @@ def setEpoch(conn):
 def updateDay():
     global CURRENT_DAY
     global CURRENT_SECONDS
-    CURRENT_DAY = int((time.time() - EPOCH) // DAY_LENGTH) + 1
-    CURRENT_SECONDS = int((time.time() - EPOCH) % DAY_LENGTH)
+    global DAY_LENGTH
+    global LAST_SECOND
+    
+    while LAST_SECOND == CURRENT_SECONDS:
+        time.sleep(0.1) # Sleep for a short time to avoid busy waiting
+        now = -(-time.time() // 1) #inderger division black magic to round up
+        CURRENT_DAY = int((now - EPOCH) // DAY_LENGTH) + 1
+        CURRENT_SECONDS = int((now - EPOCH) % DAY_LENGTH)
+    
+    LAST_SECOND = CURRENT_SECONDS
 
 def setup_machines_tools(): #setting tools for the machines
     defined_tools = [1][1][1][1][5][5][2][2][2][6][4][4] #Z-like numbering of tools
     
     machine_node_ids = ["ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238", "ns=2;i=1235", "ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238", "ns=2;i=1235",] #fill the right values
-    machines_obey = [client.get_node(node_id) for node_id in machine_node_ids]
+    machines_obey = [Client.get_node(node_id) for node_id in machine_node_ids]
 
     for i, value in enumerate(defined_tools):
         machines_obey[i].set_value(value)
@@ -131,12 +140,11 @@ def main():
    
     # Main program loop
     while True:
+        updateDay() #function will hang until the next second
+        print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
     
         look_for_pieces_toSpawn(conn)
 
-        updateDay()
-        time.sleep(1)
-        print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
 
 if __name__ == "__main__":
     main()

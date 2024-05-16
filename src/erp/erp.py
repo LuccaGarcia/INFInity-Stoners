@@ -19,6 +19,7 @@ PORT = 5000
 EPOCH = 0
 CURRENT_DAY = 0
 CURRENT_SECONDS = 0
+LAST_SECOND = -1
 DAY_LENGTH = 60
 
 # Load .env file
@@ -92,8 +93,16 @@ def udp_updater(conn, xml_queue):
 def updateDay():
     global CURRENT_DAY
     global CURRENT_SECONDS
-    CURRENT_DAY = int((time.time() - EPOCH) // DAY_LENGTH) + 1
-    CURRENT_SECONDS = int((time.time() - EPOCH) % DAY_LENGTH)
+    global DAY_LENGTH
+    global LAST_SECOND
+    
+    while LAST_SECOND == CURRENT_SECONDS:
+        time.sleep(0.1) # Sleep for a short time to avoid busy waiting
+        now = -(-time.time() // 1) #inderger division black magic to round up
+        CURRENT_DAY = int((now - EPOCH) // DAY_LENGTH) + 1
+        CURRENT_SECONDS = int((now - EPOCH) % DAY_LENGTH)
+    
+    LAST_SECOND = CURRENT_SECONDS
     
 def checkAndPlaceBuyOrder(conn):
     cur = conn.cursor()
@@ -164,6 +173,15 @@ def main():
     
     # Main program loop
     while True:
+        
+        # # Update the day and seconds
+        # if last_second == CURRENT_SECONDS:
+        #     time.sleep(0.1) # Sleep for a short time to avoid busy waiting
+        #     updateDay()
+        #     continue
+        # last_second = CURRENT_SECONDS
+        
+        updateDay() #function will hang until the next second
         print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
         
         
@@ -179,8 +197,6 @@ def main():
         
         
         
-        updateDay()
-        time.sleep(1)
 
 
 if __name__ == '__main__':
