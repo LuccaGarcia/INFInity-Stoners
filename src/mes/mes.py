@@ -1,4 +1,5 @@
 from utils.Utils import connect_to_postgresql
+from opcua import Client
 import time
 
 EPOCH = 0
@@ -25,14 +26,21 @@ def updateDay():
     global CURRENT_DAY
     CURRENT_DAY = int((time.time() - EPOCH) // DAY_LENGTH) + 1
 
+def setup_machines_tools():
+    defined_tools = [1][1][1][1][5][2][2][2][6][4][4] #Z-like numbering of tools
+    node_ids = ["ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238"]
+    nodes = [client.get_node(node_id) for node_id in node_ids]
 
+
+
+def read_orders to    
 def main():
     conn = connect_to_postgresql()
     
     setEpoch(conn)
     
     updateDay()
-    
+    setup_machines_tools()
     
     
     conn.close()
