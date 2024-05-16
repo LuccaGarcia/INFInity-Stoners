@@ -1,6 +1,9 @@
 from utils.Utils import connect_to_postgresql
 from opcua import Client
 import time
+from opcua import ua
+
+
 
 EPOCH = 0
 CURRENT_DAY = 0
@@ -27,14 +30,31 @@ def updateDay():
     CURRENT_DAY = int((time.time() - EPOCH) // DAY_LENGTH) + 1
 
 def setup_machines_tools():
-    defined_tools = [1][1][1][1][5][2][2][2][6][4][4] #Z-like numbering of tools
-    node_ids = ["ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238"]
-    nodes = [client.get_node(node_id) for node_id in node_ids]
+    defined_tools = [1][1][1][1][5][5][2][2][2][6][4][4] #Z-like numbering of tools
+    
+    machine_node_ids = ["ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238", "ns=2;i=1235", "ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238", "ns=2;i=1235",] #fill the right values
+    machines_obey = [client.get_node(node_id) for node_id in machine_node_ids]
+
+    for i, value in enumerate(defined_tools):
+        machines_obey[i].set_value(value)
+    
+    setup_correct = all(machines_obey[i].get_value() == defined_tools[i] for i in range(len(defined_tools)))
+
+    if setup_correct:
+        print("THE MACHINES ARE SET AND READY TO OBEY, MASTER")
+    else:
+        print("THE SETUP OF MACHINES IS INCORRECT. WE WILL NOT OBEY ANYMORE.")
+
+    
+    TestNode = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.Manager.UA_test")
 
 
 
-def read_orders to    
+
+#def read_orders to    
 def main():
+    client = Client("opc.tcp://127.0.0.1:4840") # Connect to the server
+    client.connect() # Get the node (UA_test) 
     conn = connect_to_postgresql()
     
     setEpoch(conn)
