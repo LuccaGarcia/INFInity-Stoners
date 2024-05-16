@@ -21,3 +21,21 @@ def placeBuyorder(conn, piece_type, quantity, current_day):
         cur.execute("INSERT INTO Incoming (arrival_date, piece_status, cost) VALUES (%s, 'Ordered', %s);", (current_day + selected_vendor[0][5], selected_vendor[0][4]))
         conn.commit()
     #buy from vendor C
+
+def setPiecesToSpawn(conn, current_day):
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM Incoming WHERE arrival_date <= %s AND piece_status = 'Ordered';", (current_day))
+    
+    for piece in cur.fetchall():
+        cur.execute("UPDATE Incoming SET piece_status = 'ToSpawn' WHERE piece_id = %s;", (piece[0]))
+        
+
+def createAndPlaceSpawnedPiecesInWarehouse(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned';")
+    
+    for piece in cur.fetchall():
+        
+        cur.execute("INSERT INTO Warehouse (piece_type, piece_status) VALUES (%s, 'Free');", (piece[1],))
+        cur.execute("DELETE FROM Incoming WHERE piece_id = %s;", (piece[0],))
+        conn.commit()
