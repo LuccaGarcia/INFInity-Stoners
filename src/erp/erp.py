@@ -159,7 +159,7 @@ def main():
     # Create a queue to store received XML data
     xml_queue = queue.Queue()
     # Create a thread to listen for UDP messages
-    udp_thread = threading.Thread(target=udp_listener_and_parser, args=(HOST, PORT, xml_queue))
+    udp_thread = threading.Thread(target=udp_listener_and_parser, args=(HOST, PORT, xml_queue), daemon=True)
     udp_thread.start()
     
     # Main program loop
