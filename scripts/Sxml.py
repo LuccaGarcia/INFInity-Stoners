@@ -2,15 +2,16 @@ import socket
 from xml.etree import ElementTree as ET
 
 # Define server IP address and port
-SERVER_ADDRESS = ("localhost", 5005)  # Replace with actual server IP if needed
+SERVER_ADDRESS = ("localhost", 5000)  # Replace with actual server IP if needed
 PORT = SERVER_ADDRESS[1]  # Extract port from address
 
 # Create XML data
 xml_data = """
-<message>
-  <sender>Client</sender>
-  <content>This is some sample XML data</content>
-</message>
+<DOCUMENT>
+<Client NameId="Client AA"/>
+<Order Number="18" WorkPiece="P5" Quantity="2" DueDate="7" LatePen="10" EarlyPen="5"/>
+<Order Number="19" WorkPiece="P6" Quantity="1" DueDate="4" LatePen="10" EarlyPen="10"/>
+</DOCUMENT>
 """
 
 # Encode the XML data

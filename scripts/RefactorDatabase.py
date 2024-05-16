@@ -47,11 +47,27 @@ def create_tables(conn):
     except psycopg2.Error as e:
         print("Error: Unable to create tables in the PostgreSQL database:", e)
  
- 
 def main():
+    # Load .env file
+    load_dotenv()
+
     conn = connect_to_postgresql(superuser=True)
     conn.autocommit = True
     cur = conn.cursor()
+    
+    # Terminate all connections to the database
+    cur.execute('''
+    SELECT 
+        pg_terminate_backend(pid) 
+    FROM 
+        pg_stat_activity 
+    WHERE 
+        -- don't kill my own connection!
+        pid <> pg_backend_pid()
+        -- don't kill the connections to other databases
+        AND datname = 'erp'
+    ;'''
+    )
 
     # Drop database if it exists
     cur.execute('DROP DATABASE IF EXISTS erp;')
