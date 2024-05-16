@@ -37,7 +37,7 @@ def udp_listener_and_parser(host, port, queue):
     except ET.ParseError as e:
       print(f"Error parsing XML: {e}")
 
-def handle_xml(xml_data, conn):
+def handle_xml(conn,xml_data):
     """
     This function processes XML data and performs database operations.
     """
@@ -75,6 +75,16 @@ def handle_xml(xml_data, conn):
     except (psycopg2.Error, AttributeError) as e:
         print(f"Error inserting data: {e}")
     
+def udp_updater(conn, xml_queue):
+    try:
+        # Get data from the queue (blocks until data is available)
+        received_data = xml_queue.get(block=False)
+        handle_xml(conn, received_data)  # Process the data
+    except queue.Empty:
+        # Handle situations where no data is available in the queue (optional)
+        pass
+    
+    
 def setEpoch(conn):
     cur = conn.cursor()
     #read the epoch from the database if it exists
@@ -99,7 +109,7 @@ def updateDay():
     global CURRENT_DAY
     CURRENT_DAY = int((time.time() - EPOCH) // DAY_LENGTH) + 1
 
-def processOrders(conn):
+def checkAndPlaceBuyOrder(conn):
     cur = conn.cursor()
     cur.execute("SELECT * FROM orders WHERE delivery_status = 'Incoming';")
     orders = cur.fetchall()
@@ -122,10 +132,10 @@ def processOrders(conn):
         print("Not enough P1 pieces")
         placeBuyorder(conn, 1, requiredP1, CURRENT_DAY)
     if requiredP2 > getFreePieces(conn, 2):
+        placeBuyorder(conn, 2, requiredP2, CURRENT_DAY)
         print("Not enough P2 pieces")
     
     cur.close()
-
 
 def main():
     conn = connect_to_postgresql()
@@ -143,18 +153,14 @@ def main():
     
     # Main program loop
     while True:
+        udp_updater(conn, xml_queue)
+        
+        checkAndPlaceBuyOrder(conn)
+        
+        
+
         
         updateDay()
-        processOrders(conn)
-        
-        try:
-            # Get data from the queue (blocks until data is available)
-            received_data = xml_queue.get(block=False)
-            handle_xml(received_data, conn)  # Process the data
-        except queue.Empty:
-            # Handle situations where no data is available in the queue (optional)
-            pass
-        
         time.sleep(1)
     
 
