@@ -42,7 +42,7 @@ def updateDay():
     CURRENT_DAY = int((time.time() - EPOCH) // DAY_LENGTH) + 1
     CURRENT_SECONDS = int((time.time() - EPOCH) % DAY_LENGTH)
 
-def setup_machines_tools():
+def setup_machines_tools(): #setting tools for the machines
     defined_tools = [1][1][1][1][5][5][2][2][2][6][4][4] #Z-like numbering of tools
     
     machine_node_ids = ["ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238", "ns=2;i=1235", "ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238", "ns=2;i=1235",] #fill the right values
@@ -56,12 +56,41 @@ def setup_machines_tools():
     if setup_correct:
         print("THE MACHINES ARE SET AND READY TO OBEY, MASTER")
     else:
-        print("THE SETUP OF MACHINES IS INCORRECT. WE WILL NOT OBEY ANYMORE.")
+        print("THE SETUP OF MACHINES IS INCORRECT. WE WILL NOT OBEY ANYMORE")
 
-    
-    TestNode = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.Manager.UA_test")
 
-#def read_orders to  
+#TODO def produce_peace():
+# read table of warehouse from ERP
+# if piece_status is allocated and order status is tobedone
+# start algorithms made by Joao, change accumulated cost after each step, update status in the end.
+
+
+# ORDER ID CODING
+
+# P7_00001
+# P9_00001
+# P8_00001
+
+# when P5 order comes, has bigger priority in belts 5 and 6 over P9
+
+# data we read form opc-ua aka PLC: 
+# PIECE_ID FOR ORDER whole WAY, TRANSFORMATION STATUS OF THE PIECE, ARRAY FOR PATH TRANSFORMATION.
+
+# MES KNOWS THE STATUS OF ALL MACHINES, CHOSING THE TRANSFORMATION PATH TO FOLLOW.
+# TRANSFORMATION PATHs for mesh to decide based on occupation of machine:
+# tbdefined
+
+# activating machines
+# TOOLS: t1 for 4 pieces, t2 for 2 pieces, t3 for 1 piece, t4 for 1 piece, t5 for 1, t6 for 1
+# T1  T1  T1  T1  T5  T5
+# T2  T2  T2  T6  T4  T4  
+
+# ORDER TO MES FROM ERP VIA D
+# PIECE_ID(based on ERP.TO SEE WHERE IT IS), ORDER_NUMBER(FROM CLIENT), ORDER_ID, START_TYPE END_TYPE STATUS(0-TODO, 1-WAREHOUSE, 2-PROCESSING, 3-DONE, 4-DELIVERED), DELIVERY DATE(switches when status is delivered), 
+
+
+#TODO shipping line.
+# ORDER_id, type of pieces, number of pieces in order, order is ready to send(full), capacity of dock left [dock line as a number in arrow], dock status matrix each cell of dock is place in dock 4 columns 5 rows) with piece_ID(from previous table) 
 
 """
 def spawn_piece(piece_type):
@@ -99,9 +128,10 @@ def main():
     
     updateDay()
     #setup_machines_tools()
-
+   
     # Main program loop
     while True:
+    
         look_for_pieces_toSpawn(conn)
 
         updateDay()
