@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os
 import time
 import sys
-from utils.Utils import connect_to_postgresql
+from utils.Utils import *
 from warehouse.warehouse import *
 import asyncio
 import socket
@@ -89,26 +89,6 @@ def udp_updater(conn, xml_queue):
         pass
     
     
-def setEpoch(conn):
-    cur = conn.cursor()
-    #read the epoch from the database if it exists
-    cur.execute("SELECT epoch FROM Bigbang;")
-    result = cur.fetchone()
-    
-    #if not, set the epoch to the current time
-    if result is None:
-        cur.execute("INSERT INTO Bigbang (epoch) VALUES (%s);", (time.time(),))
-        conn.commit()
-        print("Epoch set to current time")
-    
-    
-    cur.execute("SELECT epoch FROM Bigbang;")
-    result = cur.fetchone()
-    global EPOCH
-    EPOCH = result[0]
-    
-    cur.close()
-
 def updateDay():
     global CURRENT_DAY
     global CURRENT_SECONDS
@@ -120,58 +100,88 @@ def checkAndPlaceBuyOrder(conn):
     cur.execute("SELECT * FROM orders WHERE delivery_status = 'Incoming';")
     orders = cur.fetchall()
     
-    requiredP1 = 0
-    requiredP2 = 0
-    
+    order_list = [] # [][(order_id, quantity_p1, quantity_p2)]
     for order in orders:
-        #if the order is due
-        if order [3] <=7:
-            requiredP1 += order[4]
-        else:
-            requiredP2 += order[4] 
+        order_id = order[0]
+        quantity_p1 = order[4] if order[3] <= 7 else 0
+        quantity_p2 = order[4] if order[3] > 7 else 0
+        order_list.append([order_id, quantity_p1, quantity_p2])
         
         #update the order status	
         cur.execute("UPDATE orders SET delivery_status = 'To order' WHERE order_id = %s;", (order[0],))
-        conn.commit()
+        conn.commit()  
     
-    if requiredP1 > getFreePieces(conn, 1):
-        print("Not enough P1 pieces")
-        placeBuyorder(conn, 1, requiredP1, CURRENT_DAY)
-    if requiredP2 > getFreePieces(conn, 2):
-        placeBuyorder(conn, 2, requiredP2, CURRENT_DAY)
-        print("Not enough P2 pieces")
+    AvailableP1 = getFreePieces(conn, 1)
+    AvailableP2 = getFreePieces(conn, 2)
+    
+    #alocate avaialble pieces to orders
+    for order in order_list:
+        while AvailableP1 > 0 and order[1] > 0:
+            alocatePieceToOrder(conn, order[0], 1)
+            order[1] -= 1
+            AvailableP1 -= 1
+        
+        while AvailableP2 > 0 and order[2] > 0:
+            alocatePieceToOrder(conn, order[0], 2)
+            order[2] -= 1
+            AvailableP2 -= 1
+            
+    #calculate the required pieces
+    RequiredP1 = sum([order[1] for order in order_list])
+    RequiredP2 = sum([order[2] for order in order_list])
+    
+    #buy the required pieces
+    if RequiredP1 > 0:
+        placeBuyorder(conn, 1, RequiredP1, CURRENT_DAY)
+    if RequiredP2 > 0:
+        placeBuyorder(conn, 2, RequiredP2, CURRENT_DAY)
+    
+    for order in order_list:
+        
+        while order[1] > 0:
+            alocateIncomingPieceToOrders(conn, order[0], 1)
+            order[1]  = order[1] - 1
+        
+        while order[2] > 0:
+            alocateIncomingPieceToOrders(conn, order[0], 2)
+            order[2] = order[2] - 1
     
     cur.close()
 
 def main():
     conn = connect_to_postgresql()
     
-    setEpoch(conn)
+    global EPOCH
+    EPOCH = setEpoch(conn)
     
     updateDay()
     
     # Create a queue to store received XML data
     xml_queue = queue.Queue()
-    
     # Create a thread to listen for UDP messages
-    udp_thread = threading.Thread(target=udp_listener_and_parser, args=(HOST, PORT, xml_queue))
+    udp_thread = threading.Thread(target=udp_listener_and_parser, args=(HOST, PORT, xml_queue), daemon=True)
     udp_thread.start()
     
     # Main program loop
     while True:
-        udp_updater(conn, xml_queue)
+        print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
         
-        checkAndPlaceBuyOrder(conn)
         
-        setPiecesToSpawn(conn, CURRENT_DAY)
+        udp_updater(conn, xml_queue) # Process received XML data
+        
+        checkAndPlaceBuyOrder(conn) # Check if buy orders need to be placed
+        
+        setPiecesToSpawn(conn, CURRENT_DAY) # Set pieces to spawn if they have arrived
 
-        createAndPlaceSpawnedPiecesInWarehouse(conn)
+        createAndPlaceSpawnedPiecesInWarehouse(conn) # Create and place spawned pieces in the warehouse
+        
+        
+        
+        
         
         updateDay()
         time.sleep(1)
-        print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
-        
-    
+
 
 if __name__ == '__main__':
     main()
