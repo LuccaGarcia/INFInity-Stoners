@@ -59,7 +59,19 @@ def updateDay():
 def setup_machines_tools(): #setting tools for the machines
     defined_tools = [1][1][1][1][5][5][2][2][2][6][4][4] #Z-like numbering of tools
     
-    machine_node_ids = ["ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238", "ns=2;i=1235", "ns=2;i=1234", "ns=2;i=1235", "ns=2;i=1236", "ns=2;i=1237", "ns=2;i=1238", "ns=2;i=1235",] #fill the right values
+    machine_node_ids = ["ns=4;s=|var|CODESYS Control Win V3 x64.Application.C_Manager.C1.MachineTop.CurrentTool", #m1.1#
+                        "ns=2;i=1235", 
+                        "ns=2;i=1236", 
+                        "ns=2;i=1237", 
+                        "ns=2;i=1238", 
+                        "ns=2;i=1235", 
+                        "ns=4;s=|var|CODESYS Control Win V3 x64.Application.C_Manager.C1.MachineBot.CurrentTool", #m2.1#
+                        "ns=2;i=1235", 
+                        "ns=2;i=1236", 
+                        "ns=2;i=1237", 
+                        "ns=2;i=1238", 
+                        "ns=2;i=1235",] #m2.6 
+                        #fill the right values
     machines_obey = [Client.get_node(node_id) for node_id in machine_node_ids]
 
     for i, value in enumerate(defined_tools):
@@ -77,35 +89,118 @@ def setup_machines_tools(): #setting tools for the machines
 # read table of warehouse from ERP
 # if piece_status is allocated and order status is tobedone
 # start algorithms made by Joao, change accumulated cost after each step, update status in the end.
+#shitcode starts
+def update_piece_type(cur, piece_id, new_type):
+    cur.execute("UPDATE pieces SET current_piece_type = %s WHERE piece_id = %s;", (new_type, piece_id))
+    cur.connection.commit()
 
+# Belts status (True means occupied, False means free)
+belts_status = [
+    client.get_node("ns=2;s=|var|YourPLCProject.Belt1").get_value(),
+    client.get_node("ns=2;s=|var|YourPLCProject.Belt2").get_value(),
+    client.get_node("ns=2;s=|var|YourPLCProject.Belt3").get_value(),
+    client.get_node("ns=2;s=|var|YourPLCProject.Belt4").get_value(),
+    client.get_node("ns=2;s=|var|YourPLCProject.Belt5").get_value(),
+    client.get_node("ns=2;s=|var|YourPLCProject.Belt6").get_value()
+]
 
-# ORDER ID CODING
+def handle_p5(piece):
+    if all(belts_status[:3]) and belts_status[3] and piece['status'] == 2:
+        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(0)  # P1 Waits until one of the first 3 belts or belt 4 is empty
+    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] == 2:
+        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(1)  # P1 gives priority to P7
+    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] != 2:
+        belts_status[3] = True
+        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
+        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(2)  # P1 goes to belt 4, performs tool 1 for 45s, skips tool 6, turns around for 40s, -> P3
+        update_piece_type(piece['piece_id'], 'P3')  # Update current_piece_type to P3
+    else:
+        for i in range(3):
+            if not belts_status[i]:
+                belts_status[i] = True
+                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
+                client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(3)  # P1 goes to belt {i+1}, performs tool 1 for 45s, tool 2 for 15s, turns around for 40s, -> P4
+                update_piece_type(piece['piece_id'], 'P4')  # Update current_piece_type to P4
+                break
 
-# P7_00001
-# P9_00001
-# P8_00001
+def handle_p6(piece):
+    if all(belts_status[:3]):
+        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(4)  # P1 Waits until any of the first 3 belts is empty
+    else:
+        for i in range(3):
+            if not belts_status[i]:
+                belts_status[i] = True
+                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
+                client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(5)  # P1 goes to belt {i+1}, performs tool 1 for 45s, tool 2 for 15s, turns around for 40s, -> P4
+                update_piece_type(piece['piece_id'], 'P4')  # Update current_piece_type to P4
+                break
 
-# when P5 order comes, has bigger priority in belts 5 and 6 over P9
+def handle_p7(piece):
+    if belts_status[3] and all(belts_status[:3]):
+        client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(0)  # P8 Waits
+    elif not belts_status[3]:
+        belts_status[3] = True
+        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
+        client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(1)  # P8 goes to belt 4, performs tool 1 for 45s, tool 6 for 15s, -> P7
+        update_piece_type(piece['piece_id'], 'P7')  # Update current_piece_type to P7
+    else:
+        for i in range(3):
+            if not belts_status[i]:
+                belts_status[i] = True
+                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
+                client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(2)  # P8 goes to belt {i+1}, performs tool 1 for 45s, skips tool 2, turns around for 40s, -> checks belt 4
+                update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
+                break
 
-# data we read form opc-ua aka PLC: 
-# PIECE_ID FOR ORDER whole WAY, TRANSFORMATION STATUS OF THE PIECE, ARRAY FOR PATH TRANSFORMATION.
+def handle_p9(piece):
+    if all(belts_status[:3]) and belts_status[3] and piece['status'] == 2:
+        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(0)  # P2 Waits until one of the first 3 belts or belt 4 is empty
+    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] == 2:
+        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(1)  # P2 gives priority to P7
+    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] != 2:
+        belts_status[3] = True
+        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
+        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(2)  # P2 goes to belt 4, performs tool 1 for 45s, skips tool 6, turns around for 40s, -> P8
+        update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
+    else:
+        for i in range(3):
+            if not belts_status[i]:
+                belts_status[i] = True
+                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
+                client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(3)  # P2 goes to belt {i+1}, performs tool 1 for 45s, skips tool 2 for 15s, turns around for 40s, -> P8
+                update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
+                break
 
-# MES KNOWS THE STATUS OF ALL MACHINES, CHOSING THE TRANSFORMATION PATH TO FOLLOW.
-# TRANSFORMATION PATHs for mesh to decide based on occupation of machine:
-# tbdefined
+        # Handle P9 on belts 5 or 6
+        if all(belts_status[4:6]):
+            client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(0)  # P8 Waits
+        else:
+            for i in range(4, 6):
+                if not belts_status[i]:
+                    belts_status[i] = True
+                    client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
+                    client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(1)  # P8 goes to belt {i+1}, performs tool 5 for 45s, skips tool 4, -> P9
+                    update_piece_type(piece['piece_id'], 'P9')  # Update current_piece_type to P9
+                    break
 
-# activating machines
-# TOOLS: t1 for 4 pieces, t2 for 2 pieces, t3 for 1 piece, t4 for 1 piece, t5 for 1, t6 for 1
-# T1  T1  T1  T1  T5  T5
-# T2  T2  T2  T6  T4  T4  
+def process_orders(pieces):
+    # Sort orders based on order ID
+    pieces.sort(key=lambda x: int(x['order_id']))
 
-# ORDER TO MES FROM ERP VIA D
-# PIECE_ID(based on ERP.TO SEE WHERE IT IS), ORDER_NUMBER(FROM CLIENT), ORDER_ID, START_TYPE END_TYPE STATUS(0-TODO, 1-WAREHOUSE, 2-PROCESSING, 3-DONE, 4-DELIVERED), DELIVERY DATE(switches when status is delivered), 
+    for piece in pieces:
+        if piece['final_piece_type'] == 'P5':
+            handle_p5(piece)
+        elif piece['final_piece_type'] == 'P6':
+            handle_p6(piece)
+        elif piece['final_piece_type'] == 'P7':
+            handle_p7(piece)
+        elif piece['final_piece_type'] == 'P9':
+            handle_p9(piece)
+        else:
+            pass  # Handle unknown piece type
+    cur.close()
 
-
-#TODO shipping line.
-# ORDER_id, type of pieces, number of pieces in order, order is ready to send(full), capacity of dock left [dock line as a number in arrow], dock status matrix each cell of dock is place in dock 4 columns 5 rows) with piece_ID(from previous table) 
-
+#shitcode ends
 
 # Function to set the value of a node and check if the value is set
 def setValueCheck(node, value, variant_type):
