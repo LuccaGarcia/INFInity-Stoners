@@ -3,6 +3,9 @@ from opcua import Client
 import time
 from opcua import ua
 from dotenv import load_dotenv
+import threading
+import queue
+import xml.etree.ElementTree as ET
 
 
 # Load .env file
@@ -13,6 +16,8 @@ CURRENT_DAY = 0
 CURRENT_SECONDS = 0
 DAY_LENGTH = 60
 LAST_SECOND = -1
+CRONUS = False #if true KILL ALL THE CHILDREN
+OPCUA_CLIENT = None
 
 
 def setEpoch(conn):
@@ -101,50 +106,140 @@ def setup_machines_tools(): #setting tools for the machines
 #TODO shipping line.
 # ORDER_id, type of pieces, number of pieces in order, order is ready to send(full), capacity of dock left [dock line as a number in arrow], dock status matrix each cell of dock is place in dock 4 columns 5 rows) with piece_ID(from previous table) 
 
-"""
-def spawn_piece(piece_type):
-    if piece_type == 1:
-        #check for free upload conveyors
-        #verify the change in the codesys 
-    if piece_type == 2:
-        #check for free upload conveyors
-        #verify the change in the codesys
-"""
 
-def look_for_pieces_toSpawn(conn):
+# Function to set the value of a node and check if the value is set
+def setValueCheck(node, value, variant_type):
+    node.set_value(ua.Variant(value, variant_type))
+    while node.get_value() != value:
+        pass
+
+def ValueCheck(node, value):
+    while node.get_value() != value:
+        pass
+
+def spawn_pieces(conn, client, spawn_queue):
+
+    global CRONUS
+
+    while not CRONUS:
+
+        if spawn_queue.empty():
+            continue
+
+        try:
+            # Get data from the queue (blocks until data is available)
+            piece= spawn_queue.get(block=False)
+            print("Pieces to spawn:", piece)
+        except queue.Empty:
+            # Handle situations where no data is available in the queue (optional)
+            print("No pieces to spawn")    
+            continue
+
+        C1_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C1_ready")
+        spawnInC1 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC1")
+
+        C2_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C2_ready")
+        spawnInC2 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC2")
+
+        C3_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C3_ready")
+        spawnInC3 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC3")
+
+        C4_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C4_ready")
+        spawnInC4 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC4")
+
+        cur = conn.cursor()
+
+
+        if piece[1] == 1:
+            if C1_ready.get_value() == True:#check conveyor status==free
+                #send command to spawn piece
+                print("Piece to spawn id:", piece[0])
+                setValueCheck(spawnInC1, True, ua.VariantType.Boolean)
+                ValueCheck(C1_ready, False)
+                setValueCheck(spawnInC1, False, ua.VariantType.Boolean)
+                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
+                conn.commit()
+            elif C2_ready.get_value() == True:
+                print("Piece to spawn id:", piece[0])
+                setValueCheck(spawnInC2, True, ua.VariantType.Boolean)
+                ValueCheck(C2_ready, False)
+                setValueCheck(spawnInC2, False, ua.VariantType.Boolean)
+                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
+                conn.commit()
+        elif piece[1] == 2:
+            if C3_ready.get_value() == True:
+                print("Piece to spawn id:", piece[0])
+                setValueCheck(spawnInC3, True, ua.VariantType.Boolean)
+                ValueCheck(C3_ready, False)
+                setValueCheck(spawnInC3, False, ua.VariantType.Boolean)
+                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
+                conn.commit()
+            elif C4_ready.get_value() == True:
+                print("Piece to spawn id:", piece[0])
+                setValueCheck(spawnInC4, True, ua.VariantType.Boolean)
+                ValueCheck(C4_ready, False)
+                setValueCheck(spawnInC4, False, ua.VariantType.Boolean)
+                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
+                conn.commit()
+
+        cur.close()
+
+def look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2):
     cur = conn.cursor()
     cur.execute("SELECT * FROM Incoming WHERE piece_status = 'ToSpawn';")
-    
     pieces = cur.fetchall()
+    cur.close()
 
     for piece in pieces:
-        
-        print("Spawning piece ", piece[0])
-        #spawn_piece(piece[1])#piece[1] = piece_type
+        if piece[1] == 1:
+            spawn_queue_1.put(piece)
+        if piece[1] == 2:
+            spawn_queue_2.put(piece)
 
-        cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-        conn.commit()
-
-    cur.close()
 
 #def read_orders to    
 def main():
-    #client = Client("opc.tcp://127.0.0.1:4840") # Connect to the server
-    #client.connect() # Get the node (UA_test) 
     conn = connect_to_postgresql()
     
     setEpoch(conn)
     
     updateDay()
+
+    client = Client("opc.tcp://127.0.0.1:4840") # Connect to the server
+    global OPCUA_CLIENT
+    OPCUA_CLIENT = client
+    client.connect() # Connect to the server
     #setup_machines_tools()
-   
+
+    # Create a queue to store received requests to spawn pieces
+    spawn_queue_1 = queue.Queue()
+    spawn_queue_2 = queue.Queue()
+    # Create a thread to look for pieces to spawn
+    spawn_thread_1 = threading.Thread(target=spawn_pieces, args=(conn, client, spawn_queue_1), daemon=True)
+    spawn_thread_2 = threading.Thread(target=spawn_pieces, args=(conn, client, spawn_queue_2), daemon=True)
+    spawn_thread_1.start()
+    spawn_thread_2.start()
+
     # Main program loop
     while True:
         updateDay() #function will hang until the next second
         print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
     
-        look_for_pieces_toSpawn(conn)
+        look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2)
+
+        #spawn_pieces(conn, client, spawn_queue_1)
+        #spawn_pieces(conn, client)
+
 
 
 if __name__ == "__main__":
-    main()
+    
+    try:
+        main()
+    except KeyboardInterrupt:
+        CRONUS = True
+        print("Exiting...")
+        time.sleep(0.1)
+        OPCUA_CLIENT.disconnect()
+        print("Disconnected from opcua the server")
+        exit(0)
