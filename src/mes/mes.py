@@ -90,14 +90,14 @@ def update_piece_type(cur, piece_id, new_type):
     cur.connection.commit()
 
 # Belts status (True means occupied, False means free)
-belts_status = [
-    client.get_node("ns=2;s=|var|YourPLCProject.Belt1").get_value(),
-    client.get_node("ns=2;s=|var|YourPLCProject.Belt2").get_value(),
-    client.get_node("ns=2;s=|var|YourPLCProject.Belt3").get_value(),
-    client.get_node("ns=2;s=|var|YourPLCProject.Belt4").get_value(),
-    client.get_node("ns=2;s=|var|YourPLCProject.Belt5").get_value(),
-    client.get_node("ns=2;s=|var|YourPLCProject.Belt6").get_value()
-]
+# belts_status = [
+#     client.get_node("ns=2;s=|var|YourPLCProject.Belt1").get_value(),
+#     client.get_node("ns=2;s=|var|YourPLCProject.Belt2").get_value(),
+#     client.get_node("ns=2;s=|var|YourPLCProject.Belt3").get_value(),
+#     client.get_node("ns=2;s=|var|YourPLCProject.Belt4").get_value(),
+#     client.get_node("ns=2;s=|var|YourPLCProject.Belt5").get_value(),
+#     client.get_node("ns=2;s=|var|YourPLCProject.Belt6").get_value()
+# ]
 
 def handle_p5(piece):
     if all(belts_status[:3]) and belts_status[3] and piece['status'] == 2:
