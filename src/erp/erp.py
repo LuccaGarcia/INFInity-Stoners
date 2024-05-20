@@ -106,7 +106,7 @@ def updateDay():
     
 def checkAndPlaceBuyOrder(conn):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM orders WHERE delivery_status = 'Incoming';")
+    cur.execute("SELECT * FROM orders WHERE delivery_status = 'Incoming' ORDER BY order_id ASC;")
     orders = cur.fetchall()
     
     order_list = [] # [][(order_id, quantity_p1, quantity_p2)]

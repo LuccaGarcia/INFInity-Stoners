@@ -10,7 +10,7 @@ def getFreePieces(conn, piece_type):
 
 def alocatePieceToOrder(conn, order_id, piece_type):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM Warehouse WHERE piece_type = %s AND piece_status = 'Free' LIMIT 1;", (piece_type,))
+    cur.execute("SELECT * FROM Warehouse WHERE piece_type = %s AND piece_status = 'Free' ORDER BY id ASC LIMIT 1;", (piece_type,))
     piece = cur.fetchone()
 
     cur.execute("UPDATE Warehouse SET piece_status = 'Allocated' WHERE piece_id = %s;", (piece[0],))
@@ -21,7 +21,7 @@ def alocatePieceToOrder(conn, order_id, piece_type):
     
 def alocateIncomingPieceToOrders(conn, order_id, piece_type):
     cur=conn.cursor()
-    cur.execute("SELECT * FROM Incoming WHERE piece_type = %s AND order_id IS NULL LIMIT 1;", (piece_type,))
+    cur.execute("SELECT * FROM Incoming WHERE piece_type = %s AND order_id IS NULL ORDER BY incoming_id ASC LIMIT 1;", (piece_type,))
     piece = cur.fetchone()
     cur.execute("UPDATE Incoming SET order_id = %s WHERE incoming_id = %s;", (order_id, piece[0],))
     conn.commit()
@@ -48,7 +48,7 @@ def placeBuyorder(conn, piece_type, quantity, current_day):
 
 def setPiecesToSpawn(conn, current_day):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM Incoming WHERE arrival_date <= %s AND piece_status = 'Ordered';", (current_day,))
+    cur.execute("SELECT * FROM Incoming WHERE arrival_date <= %s AND piece_status = 'Ordered' ORDER BY incoming_id ASC;", (current_day,))
     
               
     for piece in cur.fetchall():
@@ -59,7 +59,7 @@ def setPiecesToSpawn(conn, current_day):
 
 def createAndPlaceSpawnedPiecesInWarehouse(conn):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned';")
+    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' ORDER BY incoming_id ASC;")
     
     for incoming_piece in cur.fetchall():
         
