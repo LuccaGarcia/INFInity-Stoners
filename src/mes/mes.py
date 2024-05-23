@@ -108,21 +108,27 @@ def handle_p5(piece):
     if all(belts_status[:3]) and belts_status[3] and piece['status'] == 2:
         client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(0)  # P1 Waits until one of the first 3 belts or belt 4 is empty
     elif all(belts_status[:3]) and not belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(1)  # P1 gives priority to P7
+        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(0)  # P1 gives priority to P7
     elif all(belts_status[:3]) and not belts_status[3] and piece['status'] != 2:
         belts_status[3] = True
         client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(2)  # P1 goes to belt 4, performs tool 1 for 45s, skips tool 6, turns around for 40s, -> P3
+        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(1)  # P1 goes to belt 4, performs tool 1 for 45s, skips tool 6, turns around for 40s, -> P3
+        t1.time = 45
+        total_time += t1.time + 40
         update_piece_type(piece['piece_id'], 'P3')  # Update current_piece_type to P3
     else:
         for i in range(3):
             if not belts_status[i]:
                 belts_status[i] = True
                 client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(3)  # P1 goes to belt {i+1}, performs tool 1 for 45s, tool 2 for 15s, turns around for 40s, -> P4
+                client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(1)  # P1 goes to belt {i+1}, performs tool 1 for 45s, tool 2 for 15s, turns around for 40s, -> P4
+                t1.time = 45
+                t2.time = 15
+                total_time += t1.time + t2.time + 40
                 update_piece_type(piece['piece_id'], 'P4')  # Update current_piece_type to P4
                 break
-
+    if all(belts_status[4:6]):
+        client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(0)
 def handle_p6(piece):
     if all(belts_status[:3]):
         client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(4)  # P1 Waits until any of the first 3 belts is empty
