@@ -90,7 +90,7 @@ def udp_updater(conn, xml_queue):
         pass
     
     
-def updateDay():
+def update_day():
     global CURRENT_DAY
     global CURRENT_SECONDS
     global DAY_LENGTH
@@ -104,7 +104,7 @@ def updateDay():
     
     LAST_SECOND = CURRENT_SECONDS
     
-def checkAndPlaceBuyOrder(conn):
+def check_and_place_buy_order(conn):
     cur = conn.cursor()
     cur.execute("SELECT * FROM orders WHERE delivery_status = 'Incoming' ORDER BY order_id ASC;")
     orders = cur.fetchall()
@@ -120,18 +120,18 @@ def checkAndPlaceBuyOrder(conn):
         cur.execute("UPDATE orders SET delivery_status = 'To order' WHERE order_id = %s;", (order[0],))
         conn.commit()  
     
-    AvailableP1 = getFreePieces(conn, 1)
-    AvailableP2 = getFreePieces(conn, 2)
+    AvailableP1 = get_free_pieces(conn, 1)
+    AvailableP2 = get_free_pieces(conn, 2)
     
     #alocate avaialble pieces to orders
     for order in order_list:
         while AvailableP1 > 0 and order[1] > 0:
-            alocatePieceToOrder(conn, order[0], 1)
+            alocate_piece_to_order(conn, order[0], 1)
             order[1] -= 1
             AvailableP1 -= 1
         
         while AvailableP2 > 0 and order[2] > 0:
-            alocatePieceToOrder(conn, order[0], 2)
+            alocate_piece_to_order(conn, order[0], 2)
             order[2] -= 1
             AvailableP2 -= 1
             
@@ -141,18 +141,18 @@ def checkAndPlaceBuyOrder(conn):
     
     #buy the required pieces
     if RequiredP1 > 0:
-        placeBuyorder(conn, 1, RequiredP1, CURRENT_DAY)
+        place_buy_order(conn, 1, RequiredP1, CURRENT_DAY)
     if RequiredP2 > 0:
-        placeBuyorder(conn, 2, RequiredP2, CURRENT_DAY)
+        place_buy_order(conn, 2, RequiredP2, CURRENT_DAY)
     
     for order in order_list:
         
         while order[1] > 0:
-            alocateIncomingPieceToOrders(conn, order[0], 1)
+            alocate_incoming_pieceP_to_orders(conn, order[0], 1)
             order[1]  = order[1] - 1
         
         while order[2] > 0:
-            alocateIncomingPieceToOrders(conn, order[0], 2)
+            alocate_incoming_pieceP_to_orders(conn, order[0], 2)
             order[2] = order[2] - 1
     
     cur.close()
@@ -163,7 +163,7 @@ def main():
     global EPOCH
     EPOCH = setEpoch(conn)
     
-    updateDay()
+    update_day()
     
     # Create a queue to store received XML data
     xml_queue = queue.Queue()
@@ -181,17 +181,17 @@ def main():
         #     continue
         # last_second = CURRENT_SECONDS
         
-        updateDay() #function will hang until the next second
+        update_day() #function will hang until the next second
         print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
         
         
         udp_updater(conn, xml_queue) # Process received XML data
         
-        checkAndPlaceBuyOrder(conn) # Check if buy orders need to be placed
+        check_and_place_buy_order(conn) # Check if buy orders need to be placed
         
-        setPiecesToSpawn(conn, CURRENT_DAY) # Set pieces to spawn if they have arrived
+        set_pieces_to_spawn(conn, CURRENT_DAY) # Set pieces to spawn if they have arrived
 
-        createAndPlaceSpawnedPiecesInWarehouse(conn) # Create and place spawned pieces in the warehouse
+        create_and_place_spawned_pieces_in_warehouse(conn) # Create and place spawned pieces in the warehouse
         
         
         
