@@ -223,7 +223,6 @@ def spawn_pieces(conn, client, spawn_queue):
 
         try:
             # Get data from the queue (blocks until data is available)
-            piece= spawn_queue.get(block=False)
             piece = spawn_queue.get(block=False)
             print("Pieces to spawn:", piece)
         except queue.Empty:
@@ -280,6 +279,65 @@ def spawn_pieces(conn, client, spawn_queue):
 
         cur.close()
 
+def spawned_piece_counter(conn, client):
+    
+    global CRONUS
+    
+    
+    cur = conn.cursor()
+    
+    C1_upload_n = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C1_upload")
+    C2_upload_n = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C2_upload")
+    C3_upload_n = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C3_upload")
+    C4_upload_n = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C4_upload")
+
+    C1_upload_cur = C1_upload_n.get_value()
+    C2_upload_cur = C2_upload_n.get_value()
+    C3_upload_cur = C3_upload_n.get_value()
+    C4_upload_cur = C4_upload_n.get_value()
+
+
+    while not CRONUS:
+        # update the current and previous values of the upload signals
+        C1_upload_prev = C1_upload_cur
+        C1_upload_cur = C1_upload_n.get_value()
+        C2_upload_prev = C2_upload_cur
+        C2_upload_cur = C2_upload_n.get_value()
+        C3_upload_prev = C3_upload_cur
+        C3_upload_cur = C3_upload_n.get_value()
+        C4_upload_prev = C4_upload_cur
+        C4_upload_cur = C4_upload_n.get_value()
+        
+        if C1_upload_prev and not C1_upload_cur: #falling edge
+            print("C1 upload signal detected")
+            cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = 1 ORDER BY incoming_id asc LIMIT 1;")
+            incoming_id = cur.fetchone()[0]
+            cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (incoming_id,))
+            conn.commit()
+        if C2_upload_prev and not C2_upload_cur: #falling edge
+            print("C2 upload signal detected")
+            cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = 1 ORDER BY incoming_id asc LIMIT 1;")
+            incoming_id = cur.fetchone()[0]
+            cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (incoming_id,))
+            conn.commit()
+        if C3_upload_prev and not C3_upload_cur: #falling edge
+            print("C3 upload signal detected")
+            cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = 2 ORDER BY incoming_id asc LIMIT 1;")
+            incoming_id = cur.fetchone()[0]
+            cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (incoming_id,))
+            conn.commit()
+        if C4_upload_prev and not C4_upload_cur: #falling edge
+            print("C4 upload signal detected")
+            cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = 2 ORDER BY incoming_id asc LIMIT 1;")
+            incoming_id = cur.fetchone()[0]
+            cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (incoming_id,))
+            conn.commit()
+
+    cur.close()
+    
+            
+            
+            
 def look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2):
     cur = conn.cursor()
     cur.execute("SELECT * FROM Incoming WHERE piece_status = 'ToSpawn' ORDER BY incoming_id ASC;")
@@ -315,6 +373,9 @@ def main():
     spawn_thread_2 = threading.Thread(target=spawn_pieces, args=(conn, client, spawn_queue_2), daemon=True)
     spawn_thread_1.start()
     spawn_thread_2.start()
+    
+    counter_thread = threading.Thread(target=spawned_piece_counter, args=(conn, client), daemon=True)
+    counter_thread.start()
 
     # Main program loop
     while True:
@@ -323,8 +384,6 @@ def main():
     
         look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2)
 
-        #spawn_pieces(conn, client, spawn_queue_1)
-        #spawn_pieces(conn, client)
 
 
 

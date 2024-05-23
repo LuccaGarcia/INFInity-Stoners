@@ -59,7 +59,7 @@ def set_pieces_to_spawn(conn, current_day):
 
 def create_and_place_spawned_pieces_in_warehouse(conn):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' ORDER BY incoming_id ASC;")
+    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'InWarehouse' ORDER BY incoming_id ASC;")
     
     for incoming_piece in cur.fetchall():
         
