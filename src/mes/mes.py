@@ -230,6 +230,7 @@ def spawn_pieces(conn, client, spawn_queue):
         try:
             # Get data from the queue (blocks until data is available)
             piece= spawn_queue.get(block=False)
+            piece = spawn_queue.get(block=False)
             print("Pieces to spawn:", piece)
         except queue.Empty:
             # Handle situations where no data is available in the queue (optional)
@@ -287,7 +288,7 @@ def spawn_pieces(conn, client, spawn_queue):
 
 def look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'ToSpawn';")
+    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'ToSpawn' ORDER BY incoming_id ASC;")
     pieces = cur.fetchall()
     cur.close()
 
