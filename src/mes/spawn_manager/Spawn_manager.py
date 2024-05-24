@@ -83,15 +83,15 @@ def spawn_manager(conn, client):
 def spawned_piece_counter_prod(client, queue):
     
     Cx_upload_n = [client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C{i}_upload") for i in range(1, 5)]
-    Cx_upload_cur = [node.get_value() for node in Cx_upload_n]
+    Cx_upload_curr = [node.get_value() for node in Cx_upload_n]
     
     while True:
         
-        Cx_upload_prev = [value for value in Cx_upload_cur]
-        Cx_upload_cur = [node.get_value() for node in Cx_upload_n]
+        Cx_upload_prev = [value for value in Cx_upload_curr]
+        Cx_upload_curr = [node.get_value() for node in Cx_upload_n]
     
-        for i, Cx in enumerate(Cx_upload_cur): # for every incoming belt
-            if Cx_upload_prev[i] and not Cx:    # detect falling edge
+        for i, (Curr, prev) in enumerate(zip(Cx_upload_curr, Cx_upload_prev)):
+            if prev and not Curr:    # detect falling edge
                 print(f"Piece uploaded from C{i+1}")
                 print(f"piece type {1 if i <= 1 else 2} produced")
                 queue.put(1 if i <= 1 else 2)
@@ -115,4 +115,3 @@ def spawned_piece_counter_cons(conn, queue):
             continue
         id = incoming[0]
         cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (id,))
-   
