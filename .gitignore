@@ -16,3 +16,5 @@ src/erp/lala
 src/erp/lalala
 src/erp/lalala
 /PLC
+/src/mes/opcua_utils/__pycache__
+/src/mes/spawn_manager/__pycache__

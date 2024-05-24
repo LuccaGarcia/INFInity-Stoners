@@ -2,7 +2,7 @@ import random
 
 def get_free_pieces(conn, piece_type):
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM Warehouse WHERE piece_type = %s AND piece_status = 'Free';", (piece_type,))
+    cur.execute("SELECT COUNT(*) FROM Warehouse WHERE Warehouse = 1 AND piece_type = %s AND piece_status = 'Free';", (piece_type,))
     result = cur.fetchone()
     cur.close()
     
@@ -10,13 +10,13 @@ def get_free_pieces(conn, piece_type):
 
 def alocate_piece_to_order(conn, order_id, piece_type):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM Warehouse WHERE piece_type = %s AND piece_status = 'Free' ORDER BY id ASC LIMIT 1;", (piece_type,))
+    cur.execute("SELECT * FROM Warehouse WHERE Warehouse = 1 AND piece_type = %s AND piece_status = 'Free' ORDER BY id ASC LIMIT 1;", (piece_type,))
     piece = cur.fetchone()
 
     cur.execute("UPDATE Warehouse SET piece_status = 'Allocated' WHERE piece_id = %s;", (piece[0],))
-    conn.commit()
+    # conn.commit()
     cur.execute("UPDATE Pieces SET order_id = %s WHERE piece_id = %s;", (order_id, piece[0],))
-    conn.commit()
+    # conn.commit()
     print("Avaiable Piece", piece[0], "allocated to order", order_id)
     
 def alocate_incoming_pieceP_to_orders(conn, order_id, piece_type):
@@ -24,7 +24,7 @@ def alocate_incoming_pieceP_to_orders(conn, order_id, piece_type):
     cur.execute("SELECT * FROM Incoming WHERE piece_type = %s AND order_id IS NULL ORDER BY incoming_id ASC LIMIT 1;", (piece_type,))
     piece = cur.fetchone()
     cur.execute("UPDATE Incoming SET order_id = %s WHERE incoming_id = %s;", (order_id, piece[0],))
-    conn.commit()
+    # conn.commit()
     print("Incoming piece", piece[0], "allocated to order", order_id)
     # cur.execute("UPDATE Warehouse SET piece_status = 'Allocated' WHERE piece_id = %s;", (piece[0],))
     
@@ -43,7 +43,7 @@ def place_buy_order(conn, piece_type, quantity, current_day):
     
     for _ in range(quantity):            
         cur.execute("INSERT INTO Incoming (piece_type, arrival_date, piece_status, cost) VALUES (%s, %s, 'Ordered', %s);", (piece_type, current_day + selected_vendor[0][5], selected_vendor[0][4]))
-        conn.commit()
+        # conn.commit()
     #buy from vendor C
 
 def set_pieces_to_spawn(conn, current_day):
@@ -74,4 +74,4 @@ def create_and_place_spawned_pieces_in_warehouse(conn):
         print("New piece inserted into warehouse")
         cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_type, piece_status) VALUES (%s, %s, %s, %s);", (1, piece_id, incoming_piece[1],piece_status,))
         cur.execute("DELETE FROM Incoming WHERE incoming_id = %s;", (incoming_piece[0],))
-        conn.commit()
+        # conn.commit()

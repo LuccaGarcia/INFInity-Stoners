@@ -73,7 +73,7 @@ def handle_xml(conn,xml_data):
             cursor = conn.cursor()
             cursor.execute("INSERT INTO orders (client_name, order_number, quantity, final_piece_type, due_date, late_penalty, early_penalty, placement_date, delivery_status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (client_name, order_number, quantity, work_piece, due_date, late_penalty, early_penalty, CURRENT_DAY, 'Incoming'))
-            conn.commit()
+            # conn.commit()
             
             
             print("Data inserted successfully.")
@@ -118,7 +118,7 @@ def check_and_place_buy_order(conn):
         
         #update the order status	
         cur.execute("UPDATE orders SET delivery_status = 'To order' WHERE order_id = %s;", (order[0],))
-        conn.commit()  
+        # conn.commit()  
     
     AvailableP1 = get_free_pieces(conn, 1)
     AvailableP2 = get_free_pieces(conn, 2)
@@ -159,6 +159,7 @@ def check_and_place_buy_order(conn):
 
 def main():
     conn = connect_to_postgresql()
+    conn.set_session(autocommit=True)
     
     global EPOCH
     EPOCH = setEpoch(conn)

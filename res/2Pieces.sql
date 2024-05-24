@@ -3,5 +3,6 @@ CREATE TABLE IF NOT EXISTS Pieces(
     order_id INTEGER REFERENCES Orders(order_id),
     current_piece_type INTEGER NOT NULL,
     final_piece_type INTEGER,
-    accumulated_cost INTEGER
+    accumulated_cost INTEGER,
+    accumulated_time INTEGER
 );
