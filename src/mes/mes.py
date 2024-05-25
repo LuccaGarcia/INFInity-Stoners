@@ -42,11 +42,20 @@ def pop_piece_from_w1_forced(conn, client, line):
     
     
     cur = conn.cursor()
+    
+    Query = '''
+    SELECT Warehouse.id, Warehouse.piece_id, Pieces.current_piece_type
+    FROM Warehouse
+    JOIN Pieces ON Warehouse.piece_id = Pieces.piece_id
+    WHERE Warehouse.warehouse = 1 AND Pieces.current_piece_type = 1 AND Warehouse.piece_status = 'Allocated'
+    ORDER BY Warehouse.id ASC;
+    ''' 
 
-    cur.execute("SELECT * FROM Warehouse WHERE warehouse = 1 AND piece_type = 1 AND piece_status = 'Allocated' ORDER BY id ASC;")
+    cur.execute(Query)
     pieces = cur.fetchall()
     
     # pieces = [][warehouse_id, warehouse, piece_id, piece_type, piece_status]
+    # pieces = [][warehouse_id, piece_id, piece_type]
     
     
     if pieces == []:
@@ -57,7 +66,7 @@ def pop_piece_from_w1_forced(conn, client, line):
         
         ValueCheck(L_x_ready, True) # Wait for the line to be ready
         
-        cur.execute("INSERT INTO TrafficPieces (piece_id, line_id) VALUES (%s, %s);",(piece[2], line,))
+        cur.execute("INSERT INTO TrafficPieces (piece_id, line_id) VALUES (%s, %s);",(piece[1], line,))
         cur.execute("DELETE FROM Warehouse WHERE id = %s;", (piece[0],))
         
         piece_struct = []
@@ -71,12 +80,12 @@ def pop_piece_from_w1_forced(conn, client, line):
         # hard coded values for p3 production in line 1 machine 1
         
         piece_struct.append(0)          # Accumulated time
-        piece_struct.append(piece[3])   # Current type
+        piece_struct.append(piece[2])   # Current type
         piece_struct.append(0)          # Index
-        piece_struct.append(piece[2])   # Piece ID
+        piece_struct.append(piece[1])   # Piece ID
         piece_struct.append([45000, 0]) # Transformation times
         piece_struct.append([1, 0])     # Transformation tools
-        piece_struct.append([piece[3], 3, 3])   # Transformation types
+        piece_struct.append([piece[2], 3, 3])   # Transformation types
         
         set_outgoing_piece_w1(client, line, piece_struct)
 
@@ -136,8 +145,7 @@ def incoming_w2(conn, client):
                 
                 cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
                 cur.execute("UPDATE Pieces SET accumulated_time = %s, current_piece_type = %s WHERE piece_id = %s;", (acc_time, curr_type, piece_id))
-                cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_type, piece_status) VALUES (2, %s, %s, 'Allocated');", (piece_id, curr_type))
-                
+                cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_status) VALUES (2, %s, 'Allocated');", (piece_id,))
                 
 
 

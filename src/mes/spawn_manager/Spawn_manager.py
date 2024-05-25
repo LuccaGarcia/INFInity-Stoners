@@ -7,7 +7,7 @@ import queue
 def get_spawn_queue(conn):
     cur = conn.cursor()
     
-    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'ToSpawn' ORDER BY incoming_id ASC;")
+    cur.execute("SELECT incoming_id, piece_type FROM Incoming WHERE piece_status = 'ToSpawn' ORDER BY incoming_id ASC;")
     pieces = cur.fetchall()
     cur.close()
     
@@ -24,7 +24,7 @@ def spawn_pieces(conn, client, pieces):
     cur = conn.cursor()
     
     # pieces is a list of lists with the following format:
-    # [incoming_id, piece_type, arrival_date, piece_status, cost, order_id]
+    # [incoming_id, piece_type]
     
     # Get nodes for piece spawning
     CX_ready_node = [client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C{i}_ready") for i in range(1, 5)]
@@ -108,7 +108,7 @@ def spawned_piece_counter_cons(conn, queue):
         
         print(f"Piece of type {piece_type} consumed")
         
-        cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = %s ORDER BY incoming_id ASC LIMIT 1;", (piece_type,))
+        cur.execute("SELECT incoming_id FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = %s ORDER BY incoming_id ASC LIMIT 1;", (piece_type,))
         incoming = cur.fetchone()
         if incoming is None:
             print("WTF IS GOING ON")
