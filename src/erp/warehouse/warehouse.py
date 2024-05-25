@@ -20,7 +20,7 @@ def alocate_piece_to_order(conn, order_id, piece_type):
     print("Avaiable Piece", piece[0], "allocated to order", order_id)
     
 def alocate_incoming_pieceP_to_orders(conn, order_id, piece_type):
-    cur=conn.cursor()
+    cur = conn.cursor()   
     cur.execute("SELECT * FROM Incoming WHERE piece_type = %s AND order_id IS NULL ORDER BY incoming_id ASC LIMIT 1;", (piece_type,))
     piece = cur.fetchone()
     cur.execute("UPDATE Incoming SET order_id = %s WHERE incoming_id = %s;", (order_id, piece[0],))
@@ -66,8 +66,13 @@ def create_and_place_spawned_pieces_in_warehouse(conn):
         print( incoming_piece)
         piece_status = 'Free' if incoming_piece[5] == None else 'Allocated'
         
+        order_id = incoming_piece[5]
+        
+        cur.execute("SELECT final_piece_type FROM Orders WHERE order_id = %s;", (order_id,))
+        final_piece_type = cur.fetchone()[0]
+        
         print("New piece spawned, adding to database.")        
-        cur.execute("INSERT INTO pieces (current_piece_type, accumulated_cost, order_id) VALUES (%s, %s, %s) RETURNING piece_id;", (incoming_piece[1], incoming_piece[4], incoming_piece[5]))
+        cur.execute("INSERT INTO pieces (current_piece_type, accumulated_cost, order_id, final_piece_type) VALUES (%s, %s, %s, %s) RETURNING piece_id;", (incoming_piece[1], incoming_piece[4], incoming_piece[5], final_piece_type))
         #get the id of the inserted piece
         piece_id = cur.fetchone()[0]
         

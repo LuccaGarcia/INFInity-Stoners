@@ -96,7 +96,7 @@ def spawned_piece_counter_prod(client, queue):
                 print(f"piece type {1 if i <= 1 else 2} produced")
                 queue.put(1 if i <= 1 else 2)
     
-def spawned_piece_counter_cons(conn, queue):
+def spawned_piece_counter_cons(conn, queue): 
     cur = conn.cursor()
     
     while True:

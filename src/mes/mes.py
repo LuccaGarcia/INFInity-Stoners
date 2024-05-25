@@ -69,13 +69,14 @@ def pop_piece_from_w1_forced(conn, client, line):
         
         
         # hard coded values for p3 production in line 1 machine 1
-        piece_struct.append(0)
-        piece_struct.append(piece[3])
-        piece_struct.append(0)
-        piece_struct.append(piece[2])
-        piece_struct.append([45000, 0])
-        piece_struct.append([1, 0])
-        piece_struct.append([piece[3], 3, 3])
+        
+        piece_struct.append(0)          # Accumulated time
+        piece_struct.append(piece[3])   # Current type
+        piece_struct.append(0)          # Index
+        piece_struct.append(piece[2])   # Piece ID
+        piece_struct.append([45000, 0]) # Transformation times
+        piece_struct.append([1, 0])     # Transformation tools
+        piece_struct.append([piece[3], 3, 3])   # Transformation types
         
         set_outgoing_piece_w1(client, line, piece_struct)
 
@@ -129,7 +130,7 @@ def incoming_w2(conn, client):
                 
                 incoming_piece_struct = get_incoming_piece_w2(client, i+1)
                 # piece_struct = [Acc_time, Curr_type, Index, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
-                acc_time = incoming_piece_struct[0]
+                acc_time = (incoming_piece_struct[0] // 1000)   # Convert from ms to s
                 curr_type = incoming_piece_struct[1]
                 piece_id = incoming_piece_struct[3]
                 
@@ -166,9 +167,6 @@ def main():
     
     spawned_piece_counter_cons_thread = threading.Thread(target=spawned_piece_counter_cons, args=(conn, counter_queue), daemon=True)
     spawned_piece_counter_cons_thread.start()
-    
-    piece_popper_thread = threading.Thread(target=pop_piece_from_w1_forced, args=(conn, client, 1), daemon=True)
-    # piece_popper_thread.start()
     
     incoming_w2_thread = threading.Thread(target=incoming_w2, args=(conn, client), daemon=True)
     incoming_w2_thread.start()
