@@ -25,6 +25,20 @@ DAY_LENGTH = 60
 # Load .env file
 load_dotenv()
 
+def update_day():
+    global CURRENT_DAY
+    global CURRENT_SECONDS
+    global DAY_LENGTH
+    global LAST_SECOND
+    
+    while LAST_SECOND == CURRENT_SECONDS:
+        time.sleep(0.1) # Sleep for a short time to avoid busy waiting
+        now = -(-time.time() // 1) #inderger division black magic to round up
+        CURRENT_DAY = int((now - EPOCH) // DAY_LENGTH) + 1
+        CURRENT_SECONDS = int((now - EPOCH) % DAY_LENGTH)
+    
+    LAST_SECOND = CURRENT_SECONDS
+    
 def udp_listener_and_parser(host, port, queue):
   """
   This function listens for UDP messages on a specified host and port.
@@ -40,7 +54,7 @@ def udp_listener_and_parser(host, port, queue):
       root = ET.fromstring(data)
       queue.put(root)  # Add parsed data to the queue
     except ET.ParseError as e:
-      print(f"Error parsing XML: {e}")
+      print(f"Error parsing XML: {e}")  
 
 def handle_xml(conn,xml_data):
     """
@@ -73,13 +87,13 @@ def handle_xml(conn,xml_data):
             cursor = conn.cursor()
             cursor.execute("INSERT INTO orders (client_name, order_number, quantity, final_piece_type, due_date, late_penalty, early_penalty, placement_date, delivery_status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                         (client_name, order_number, quantity, work_piece, due_date, late_penalty, early_penalty, CURRENT_DAY, 'Incoming'))
-            conn.commit()
+            # conn.commit()
             
             
             print("Data inserted successfully.")
     except (psycopg2.Error, AttributeError) as e:
         print(f"Error inserting data: {e}")
-    
+
 def udp_updater(conn, xml_queue):
     try:
         # Get data from the queue (blocks until data is available)
@@ -88,53 +102,53 @@ def udp_updater(conn, xml_queue):
     except queue.Empty:
         # Handle situations where no data is available in the queue (optional)
         pass
-    
-    
-def update_day():
-    global CURRENT_DAY
-    global CURRENT_SECONDS
-    global DAY_LENGTH
-    global LAST_SECOND
-    
-    while LAST_SECOND == CURRENT_SECONDS:
-        time.sleep(0.1) # Sleep for a short time to avoid busy waiting
-        now = -(-time.time() // 1) #inderger division black magic to round up
-        CURRENT_DAY = int((now - EPOCH) // DAY_LENGTH) + 1
-        CURRENT_SECONDS = int((now - EPOCH) % DAY_LENGTH)
-    
-    LAST_SECOND = CURRENT_SECONDS
-    
+
 def check_and_place_buy_order(conn):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM orders WHERE delivery_status = 'Incoming' ORDER BY order_id ASC;")
+    
+    cur.execute("SELECT order_id, final_piece_type, quantity FROM orders WHERE delivery_status = 'Incoming' ORDER BY order_id ASC;")
     orders = cur.fetchall()
+    # [][order_id, final_piece_type, quantity]
+    
     
     order_list = [] # [][(order_id, quantity_p1, quantity_p2)]
     for order in orders:
         order_id = order[0]
-        quantity_p1 = order[4] if order[3] <= 7 else 0
-        quantity_p2 = order[4] if order[3] > 7 else 0
+        quantity_p1 = order[2] if order[1] <= 6 else 0  # if final piece type = 1,2,3,4,5,6 buy piece type 1
+        quantity_p2 = order[2] if order[1] >= 7 else 0   # if final piece type = 7,8,9 buy piece type 2
         order_list.append([order_id, quantity_p1, quantity_p2])
         
         #update the order status	
         cur.execute("UPDATE orders SET delivery_status = 'To order' WHERE order_id = %s;", (order[0],))
-        conn.commit()  
-    
-    AvailableP1 = get_free_pieces(conn, 1)
-    AvailableP2 = get_free_pieces(conn, 2)
+        # conn.commit()  
+       
+    Available_warehouse_P1 = get_free_warehouse_pieces(conn, 1)
+    Available_warehouse_P2 = get_free_warehouse_pieces(conn, 2)
+    Available_incoming_P1 = get_free_incoming_pieces(conn, 1)
+    Available_incoming_P2 = get_free_incoming_pieces(conn, 2)
     
     #alocate avaialble pieces to orders
     for order in order_list:
-        while AvailableP1 > 0 and order[1] > 0:
-            alocate_piece_to_order(conn, order[0], 1)
+        while Available_warehouse_P1 > 0 and order[1] > 0:
+            alocate_warehouse_piece_to_order(conn, order[0], 1)
             order[1] -= 1
-            AvailableP1 -= 1
+            Available_warehouse_P1 -= 1
         
-        while AvailableP2 > 0 and order[2] > 0:
-            alocate_piece_to_order(conn, order[0], 2)
+        while Available_incoming_P1 > 0 and order[1] > 0:
+            alocate_incoming_piece_to_orders(conn, order[0], 1)
+            order[1] -= 1
+            Available_incoming_P1 -= 1
+        
+        while Available_warehouse_P2 > 0 and order[2] > 0:
+            alocate_warehouse_piece_to_order(conn, order[0], 2)
             order[2] -= 1
-            AvailableP2 -= 1
-            
+            Available_warehouse_P2 -= 1
+        
+        while Available_incoming_P2 > 0 and order[2] > 0:
+            alocate_incoming_piece_to_orders(conn, order[0], 2)
+            order[2] -= 1
+            Available_incoming_P2 -= 1
+
     #calculate the required pieces
     RequiredP1 = sum([order[1] for order in order_list])
     RequiredP2 = sum([order[2] for order in order_list])
@@ -148,14 +162,15 @@ def check_and_place_buy_order(conn):
     for order in order_list:
         
         while order[1] > 0:
-            alocate_incoming_pieceP_to_orders(conn, order[0], 1)
+            alocate_incoming_piece_to_orders(conn, order[0], 1)
             order[1]  = order[1] - 1
         
         while order[2] > 0:
-            alocate_incoming_pieceP_to_orders(conn, order[0], 2)
+            alocate_incoming_piece_to_orders(conn, order[0], 2)
             order[2] = order[2] - 1
     
     cur.close()
+
 
 def main():
     conn = connect_to_postgresql()
@@ -165,42 +180,31 @@ def main():
     
     update_day()
     
-    # Create a queue to store received XML data
+    # Create a queue to store recieved XML data
     xml_queue = queue.Queue()
-    # Create a thread to listen for UDP messages
+    
+    # Start a thread to listen for UDP messages and parse them
     udp_thread = threading.Thread(target=udp_listener_and_parser, args=(HOST, PORT, xml_queue), daemon=True)
     udp_thread.start()
     
-    # Main program loop
+    # Start the main loop
     while True:
         
-        # # Update the day and seconds
-        # if last_second == CURRENT_SECONDS:
-        #     time.sleep(0.1) # Sleep for a short time to avoid busy waiting
-        #     updateDay()
-        #     continue
-        # last_second = CURRENT_SECONDS
-        
-        update_day() #function will hang until the next second
+        update_day()
         print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
         
+        udp_updater(conn, xml_queue)
         
-        udp_updater(conn, xml_queue) # Process received XML data
+        check_and_place_buy_order(conn)
         
-        check_and_place_buy_order(conn) # Check if buy orders need to be placed
+        set_pieces_to_spawn(conn, CURRENT_DAY)
         
-        set_pieces_to_spawn(conn, CURRENT_DAY) # Set pieces to spawn if they have arrived
+        create_and_place_spawned_pieces_in_warehouse(conn)
+        
+        
+    
 
-        create_and_place_spawned_pieces_in_warehouse(conn) # Create and place spawned pieces in the warehouse
-        
-        
-        
-        
-        
 
 
 if __name__ == '__main__':
     main()
-
-    
-    

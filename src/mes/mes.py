@@ -1,13 +1,13 @@
-from utils.Utils import connect_to_postgresql
-from opcua import Client
+from utils.Utils import *
+from opcua_utils.Opcua_utils import *
+from spawn_manager.Spawn_manager import *
+from production_manager.Production_manager import *
+from opcua import Client, ua
 import time
-from opcua import ua
 from dotenv import load_dotenv
 import threading
 import queue
-import xml.etree.ElementTree as ET
 
- 
 # Load .env file
 load_dotenv()
 
@@ -19,33 +19,7 @@ LAST_SECOND = -1
 CRONUS = False #if true KILL ALL THE CHILDREN
 OPCUA_CLIENT = None
 
-p5_busy = False    
-p6_busy = False
-p7_busy = False
-p9_busy = False
-
-
-def setEpoch(conn):
-    """
-    This function retrieves the current epoch from the database.
-    """
-    cur = conn.cursor()
-    #read the epoch from the database if it exists
-    cur.execute("SELECT epoch FROM Bigbang;")
-    result = cur.fetchone()
-
-    #if not, set the epoch to the current time
-    if result is None:
-        cur.execute("INSERT INTO Bigbang (epoch) VALUES (%s);", (time.time(),))
-        conn.commit()
-        print("Epoch set to current time")
-
-    cur.execute("SELECT epoch FROM Bigbang;")
-    result = cur.fetchone()
-    global EPOCH
-    EPOCH = result[0]
-    
-    cur.close()
+OPCUA_SERVER_ADDRESS = os.getenv("OPCUA_SERVER_ADDRESS")
 
 def updateDay():
     global CURRENT_DAY
@@ -61,328 +35,164 @@ def updateDay():
     
     LAST_SECOND = CURRENT_SECONDS
 
-def setup_machines_tools(): #setting tools for the machines
-    defined_tools = [1][1][1][1][5][5][2][2][2][6][4][4] #Z-like numbering of tools
+def pop_piece_from_w1_forced(conn, client, line):
     
-    machine_node_ids = ["ns=4;s=|var|CODESYS Control Win V3 x64.Application.C_Manager.C1.MachineTop.CurrentTool", #m1.1#
-                        "ns=2;i=1235", 
-                        "ns=2;i=1236", 
-                        "ns=2;i=1237", 
-                        "ns=2;i=1238", 
-                        "ns=2;i=1235", 
-                        "ns=4;s=|var|CODESYS Control Win V3 x64.Application.C_Manager.C1.MachineBot.CurrentTool", #m2.1#
-                        "ns=2;i=1235", 
-                        "ns=2;i=1236", 
-                        "ns=2;i=1237", 
-                        "ns=2;i=1238", 
-                        "ns=2;i=1235",] #m2.6 
-                        #fill the right values
-    machines_obey = [Client.get_node(node_id) for node_id in machine_node_ids]
-
-    for i, value in enumerate(defined_tools):
-        machines_obey[i].set_value(value)
+    spawnIn_L_x = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnIn_L_{line}")
+    L_x_ready = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_{line}_ready")
     
-    setup_correct = all(machines_obey[i].get_value() == defined_tools[i] for i in range(len(defined_tools)))
-
-    if setup_correct:
-        print("THE MACHINES ARE SET AND READY TO OBEY, MASTER")
-    else:
-        print("THE SETUP OF MACHINES IS INCORRECT. WE WILL NOT OBEY ANYMORE")
-
-
-#TODO def produce_peace():
-# read table of warehouse from ERP
-# if piece_status is allocated and order status is tobedone
-# start algorithms made by Joao, change accumulated cost after each step, update status in the end.
-#shitcode starts
-def update_piece_type(cur, piece_id, new_type):
-    cur.execute("UPDATE pieces SET current_piece_type = %s WHERE piece_id = %s;", (new_type, piece_id))
-    cur.connection.commit()
-
-# Belts status (True means occupied, False means free)
-# belts_status = [
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt1").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt2").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt3").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt4").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt5").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt6").get_value()
-# ]
-
-def handle_p5_1(piece):
-                
-                belts_status[i] = True # belt is true when activated
-                cur = conn.cursor()
-                # Execute the query
-                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
-                # Fetch the result
-                piece_id = cur.fetchone()
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(1) # incoming type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(3) # mid_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(4) # final_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(15) # time for second transformation
-                # we need to extract the acc_time and the current_type
-                # Close communication with the server
-                cur.close()
-def handle_p5_2(piece):
-                
-                belts_status[i] = True # belt is true when activated
-                cur = conn.cursor()
-                # Execute the query
-                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
-                # Fetch the result
-                piece_id = cur.fetchone()
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(4) # incoming type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(4) # mid_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(5) # final_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(0) # time for first transformation
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(25) # time for second transformation
-                # we need to extract the acc_time and the current_type
-                # Close communication with the server
-                cur.close()
-def handle_p6(piece):
     
-                belts_status[i] = True # belt is true whern activated
-                cur = conn.cursor()
-                # Execute the query
-                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
-                # Fetch the result
-                piece_id = cur.fetchone()
-                for i in range(3):
-            if not all(belts_status[:3]):  #idk
-                p6_busy = False
-                belts_status[i] = True #change i so is the belt number? belt is true when activated
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(1) # incoming type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(3) # mid_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(6) # final_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(40) # time for second transformation
-            else:
-                p6_busy = True
-                break
-                # we need to extract the acc_time and the current_type
-                # Close communication with the server
-                cur.close()
-def handle_p7(piece):
-                
-                belts_status[i] = True # belt is true when activated
-                cur = conn.cursor()
-                # Execute the query
-                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
-                # Fetch the result
-                piece_id = cur.fetchone()
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(2) # incoming type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(8) # mid_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(7) # final_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(15) # time for second transformation
-                # we need to extract the acc_time and the current_type
-                # Close communication with the server
-                cur.close()
-def handle_p9_1(piece):
-                
-                belts_status[i] = True # belt is true when activated
-                cur = conn.cursor()
-                # Execute the query
-                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
-                # Fetch the result
-                piece_id = cur.fetchone()
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(2) # incoming type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(8) # mid_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(8) # final_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(0) # time for second transformation
-                # we need to extract the acc_time and the current_type
-                # Close communication with the server
-                cur.close()
-def handle_p9_2(piece):
-                
-                belts_status[i] = True # belt is true when activated
-                cur = conn.cursor()
-                # Execute the query
-                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
-                # Fetch the result
-                piece_id = cur.fetchone()
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(8) # incoming type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(9) # mid_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(9) # final_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
-                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(0) # time for second transformation
-                # we need to extract the acc_time and the current_type
-                # Close communication with the server
-                cur.close()
-
-def process_orders(pieces):
-    # Sort orders based on order ID
-    pieces.sort(key=lambda x: int(x['order_id']))
-
-    for piece in pieces:
-        if piece['final_piece_type'] == 'P5':
-            handle_p5(piece)
-        elif piece['final_piece_type'] == 'P6':
-            handle_p6(piece)
-        elif piece['final_piece_type'] == 'P7':
-            handle_p7(piece)
-        elif piece['final_piece_type'] == 'P9':
-            handle_p9(piece)
-        else:
-            pass  # Handle unknown piece type
-    cur.close()
-
-#shitcode ends
-
-# Function to set the value of a node and check if the value is set
-def setValueCheck(node, value, variant_type):
-    node.set_value(ua.Variant(value, variant_type))
-    while node.get_value() != value:
-        pass
-
-def ValueCheck(node, value):
-    while node.get_value() != value:
-        pass
-
-def spawn_pieces(conn, client, spawn_queue):
-
-    global CRONUS
-
-    while not CRONUS:
-
-        if spawn_queue.empty():
-            continue
-
-        try:
-            # Get data from the queue (blocks until data is available)
-            piece= spawn_queue.get(block=False)
-            piece = spawn_queue.get(block=False)
-            print("Pieces to spawn:", piece)
-        except queue.Empty:
-            # Handle situations where no data is available in the queue (optional)
-            print("No pieces to spawn")    
-            continue
-
-        C1_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C1_ready")
-        spawnInC1 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC1")
-
-        C2_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C2_ready")
-        spawnInC2 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC2")
-
-        C3_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C3_ready")
-        spawnInC3 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC3")
-
-        C4_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C4_ready")
-        spawnInC4 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC4")
-
-        cur = conn.cursor()
-
-
-        if piece[1] == 1:
-            if C1_ready.get_value() == True:#check conveyor status==free
-                #send command to spawn piece
-                print("Piece to spawn id:", piece[0])
-                setValueCheck(spawnInC1, True, ua.VariantType.Boolean)
-                ValueCheck(C1_ready, False)
-                setValueCheck(spawnInC1, False, ua.VariantType.Boolean)
-                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-                conn.commit()
-            elif C2_ready.get_value() == True:
-                print("Piece to spawn id:", piece[0])
-                setValueCheck(spawnInC2, True, ua.VariantType.Boolean)
-                ValueCheck(C2_ready, False)
-                setValueCheck(spawnInC2, False, ua.VariantType.Boolean)
-                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-                conn.commit()
-        elif piece[1] == 2:
-            if C3_ready.get_value() == True:
-                print("Piece to spawn id:", piece[0])
-                setValueCheck(spawnInC3, True, ua.VariantType.Boolean)
-                ValueCheck(C3_ready, False)
-                setValueCheck(spawnInC3, False, ua.VariantType.Boolean)
-                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-                conn.commit()
-            elif C4_ready.get_value() == True:
-                print("Piece to spawn id:", piece[0])
-                setValueCheck(spawnInC4, True, ua.VariantType.Boolean)
-                ValueCheck(C4_ready, False)
-                setValueCheck(spawnInC4, False, ua.VariantType.Boolean)
-                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-                conn.commit()
-
-        cur.close()
-
-def look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2):
     cur = conn.cursor()
-    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'ToSpawn' ORDER BY incoming_id ASC;")
-    pieces = cur.fetchall()
-    cur.close()
-
-    for piece in pieces:
-        if piece[1] == 1:
-            spawn_queue_1.put(piece)
-        if piece[1] == 2:
-            spawn_queue_2.put(piece)
-
-
-#def read_orders to    
-def main():
-    conn = connect_to_postgresql()
     
-    setEpoch(conn)
+    Query = '''
+    SELECT Warehouse.id, Warehouse.piece_id, Pieces.current_piece_type
+    FROM Warehouse
+    JOIN Pieces ON Warehouse.piece_id = Pieces.piece_id
+    WHERE Warehouse.warehouse = 1 AND Pieces.current_piece_type = 1 AND Warehouse.piece_status = 'Allocated'
+    ORDER BY Warehouse.id ASC;
+    ''' 
+
+    cur.execute(Query)
+    pieces = cur.fetchall()
+    
+    # pieces = [][warehouse_id, warehouse, piece_id, piece_type, piece_status]
+    # pieces = [][warehouse_id, piece_id, piece_type]
+    
+    
+    if pieces == []:
+        print("No pieces to pop")
+        return -1
+    
+    for piece in pieces:
+        
+        ValueCheck(L_x_ready, True) # Wait for the line to be ready
+        
+        cur.execute("INSERT INTO TrafficPieces (piece_id, line_id) VALUES (%s, %s);",(piece[1], line,))
+        cur.execute("DELETE FROM Warehouse WHERE id = %s;", (piece[0],))
+        
+        piece_struct = []
+        # piece_struct = [Acc_time, Curr_type, Index, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+        # Transformation_times_array = [time1, time2]
+        # Transformation_tools_array = [tool1, tool2]
+        # Transformation_types_array = [type1, type2, type3]
+        #                                in     mid    out
+        
+        
+        # hard coded values for p3 production in line 1 machine 1
+        
+        piece_struct.append(0)          # Accumulated time
+        piece_struct.append(piece[2])   # Current type
+        piece_struct.append(0)          # Index
+        piece_struct.append(piece[1])   # Piece ID
+        piece_struct.append([45000, 0]) # Transformation times
+        piece_struct.append([1, 0])     # Transformation tools
+        piece_struct.append([piece[2], 3, 3])   # Transformation types
+        
+        set_outgoing_piece_w1(client, line, piece_struct)
+
+        setValueCheck(spawnIn_L_x, True, ua.VariantType.Boolean)
+        ValueCheck(L_x_ready, False)
+        setValueCheck(spawnIn_L_x, False, ua.VariantType.Boolean)
+        
+def pop_piece_from_w1(conn, client, line, piece_struct):
+    # piece_struct = [Acc_time, Curr_type, Index, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+    # Transformation_times_array = [time1, time2]
+    # Transformation_tools_array = [tool1, tool2]
+    # Transformation_types_array = [type1, type2, type3]
+    #                                in     mid    out
+    
+    cur = conn.cursor()
+    
+    spawnIn_L_x = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnIn_L_{line}")
+    L_x_ready = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_{line}_ready")
+    
+    ValueCheck(L_x_ready, True) # Wait for the line to be ready
+    
+    piece_id = piece_struct[3]
+    
+    cur.execute("DELETE FROM Warehouse WHERE id = %s;", (piece_id,)) 
+
+    set_outgoing_piece_w1(client, line, piece_struct) # Set the piece data to be sent to the line
+    
+    setValueCheck(spawnIn_L_x, True, ua.VariantType.Boolean)
+    ValueCheck(L_x_ready, False)
+    setValueCheck(spawnIn_L_x, False, ua.VariantType.Boolean)
+    
+    cur.execute("INSERT INTO TrafficPieces (piece_id, line_id) VALUES (%s, %s);",(piece_id, line,))
+    
+def incoming_w2(conn, client):
+    
+    cur = conn.cursor()
+    
+    
+    L_x_upload_W2_n = [client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_{i}_upload_W2") for i in range(1, 7)]
+    
+    L_x_upload_W2_cur = [value.get_value() for value in L_x_upload_W2_n]
+    
+    while True:
+        
+        L_x_upload_W2_prev = [value for value in L_x_upload_W2_cur]
+        L_x_upload_W2_cur = [value.get_value() for value in L_x_upload_W2_n]
+        
+        for i, (curr, prev) in enumerate(zip(L_x_upload_W2_cur, L_x_upload_W2_prev)):
+            if prev and not curr: # Detect falling edge
+                print(f"Piece uploaded from L{i+1} to W2")
+                
+                incoming_piece_struct = get_incoming_piece_w2(client, i+1)
+                # piece_struct = [Acc_time, Curr_type, Index, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+                acc_time = (incoming_piece_struct[0] // 1000)   # Convert from ms to s
+                curr_type = incoming_piece_struct[1]
+                piece_id = incoming_piece_struct[3]
+                
+                cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
+                cur.execute("UPDATE Pieces SET accumulated_time = %s, current_piece_type = %s WHERE piece_id = %s;", (acc_time, curr_type, piece_id))
+                cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_status) VALUES (2, %s, 'Allocated');", (piece_id,))
+                
+
+
+    
+
+def main():
+    conn = connect_to_postgresql() # Connect to the database
+    
+    global EPOCH
+    EPOCH = setEpoch(conn)
     
     updateDay()
-
-    client = Client("opc.tcp://127.0.0.1:4840") # Connect to the server
+    
+    client = Client(OPCUA_SERVER_ADDRESS) # Connect to the OPCUA server
     global OPCUA_CLIENT
     OPCUA_CLIENT = client
-    client.connect() # Connect to the server
-    #setup_machines_tools()
-
-    # Create a queue to store received requests to spawn pieces
-    spawn_queue_1 = queue.Queue()
-    spawn_queue_2 = queue.Queue()
-    # Create a thread to look for pieces to spawn
-    spawn_thread_1 = threading.Thread(target=spawn_pieces, args=(conn, client, spawn_queue_1), daemon=True)
-    spawn_thread_2 = threading.Thread(target=spawn_pieces, args=(conn, client, spawn_queue_2), daemon=True)
-    spawn_thread_1.start()
-    spawn_thread_2.start()
-
-    # Main program loop
+    client.connect()
+    
+    
+    spawn_thread = threading.Thread(target=spawn_manager, args=(conn, client), daemon=True)
+    spawn_thread.start()
+    
+    counter_queue = queue.Queue(maxsize=40)
+    
+    spawn_counter_producer_thread = threading.Thread(target=spawned_piece_counter_prod, args=(client, counter_queue), daemon=True)
+    spawn_counter_producer_thread.start()
+    
+    spawned_piece_counter_cons_thread = threading.Thread(target=spawned_piece_counter_cons, args=(conn, counter_queue), daemon=True)
+    spawned_piece_counter_cons_thread.start()
+    
+    incoming_w2_thread = threading.Thread(target=incoming_w2, args=(conn, client), daemon=True)
+    incoming_w2_thread.start()
+    
+    
     while True:
-        updateDay() #function will hang until the next second
+        updateDay()
         print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
-    
-        look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2)
-
-        #spawn_pieces(conn, client, spawn_queue_1)
-        #spawn_pieces(conn, client)
-
-import psycopg2
-
-
-    
-        # Create a new cursor
-       
+        
+        pop_piece_from_w1_forced(conn, client, 1)
 
 if __name__ == "__main__":
-    
     try:
         main()
     except KeyboardInterrupt:
         CRONUS = True
         print("Exiting...")
-        time.sleep(0.1)
+        time.sleep(0.2)
         OPCUA_CLIENT.disconnect()
-        print("Disconnected from opcua the server")
+        print("Disconnected from OPCUA server")
         exit(0)
