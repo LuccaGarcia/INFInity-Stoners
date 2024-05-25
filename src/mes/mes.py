@@ -7,7 +7,7 @@ import threading
 import queue
 import xml.etree.ElementTree as ET
 
-
+ 
 # Load .env file
 load_dotenv()
 
@@ -18,6 +18,11 @@ DAY_LENGTH = 60
 LAST_SECOND = -1
 CRONUS = False #if true KILL ALL THE CHILDREN
 OPCUA_CLIENT = None
+
+p5_busy = False    
+p6_busy = False
+p7_busy = False
+p9_busy = False
 
 
 def setEpoch(conn):
@@ -104,90 +109,121 @@ def update_piece_type(cur, piece_id, new_type):
 #     client.get_node("ns=2;s=|var|YourPLCProject.Belt6").get_value()
 # ]
 
-def handle_p5(piece):
-    if all(belts_status[:3]) and belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(0)  # P1 Waits until one of the first 3 belts or belt 4 is empty
-    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(0)  # P1 gives priority to P7
-    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] != 2:
-        belts_status[3] = True
-        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(1)  # P1 goes to belt 4, performs tool 1 for 45s, skips tool 6, turns around for 40s, -> P3
-        t1.time = 45
-        total_time += t1.time + 40
-        update_piece_type(piece['piece_id'], 'P3')  # Update current_piece_type to P3
-    else:
-        for i in range(3):
-            if not belts_status[i]:
-                belts_status[i] = True
-                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(1)  # P1 goes to belt {i+1}, performs tool 1 for 45s, tool 2 for 15s, turns around for 40s, -> P4
-                t1.time = 45
-                t2.time = 15
-                total_time += t1.time + t2.time + 40
-                update_piece_type(piece['piece_id'], 'P4')  # Update current_piece_type to P4
-                break
-    if all(belts_status[4:6]):
-        client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(0)
+def handle_p5_1(piece):
+                
+                belts_status[i] = True # belt is true when activated
+                cur = conn.cursor()
+                # Execute the query
+                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
+                # Fetch the result
+                piece_id = cur.fetchone()
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(1) # incoming type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(3) # mid_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(4) # final_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(15) # time for second transformation
+                # we need to extract the acc_time and the current_type
+                # Close communication with the server
+                cur.close()
+def handle_p5_2(piece):
+                
+                belts_status[i] = True # belt is true when activated
+                cur = conn.cursor()
+                # Execute the query
+                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
+                # Fetch the result
+                piece_id = cur.fetchone()
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(4) # incoming type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(4) # mid_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(5) # final_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(0) # time for first transformation
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(25) # time for second transformation
+                # we need to extract the acc_time and the current_type
+                # Close communication with the server
+                cur.close()
 def handle_p6(piece):
-    if all(belts_status[:3]):
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(4)  # P1 Waits until any of the first 3 belts is empty
-    else:
-        for i in range(3):
-            if not belts_status[i]:
-                belts_status[i] = True
-                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(5)  # P1 goes to belt {i+1}, performs tool 1 for 45s, tool 2 for 15s, turns around for 40s, -> P4
-                update_piece_type(piece['piece_id'], 'P4')  # Update current_piece_type to P4
-                break
-
-def handle_p7(piece):
-    if belts_status[3] and all(belts_status[:3]):
-        client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(0)  # P8 Waits
-    elif not belts_status[3]:
-        belts_status[3] = True
-        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
-        client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(1)  # P8 goes to belt 4, performs tool 1 for 45s, tool 6 for 15s, -> P7
-        update_piece_type(piece['piece_id'], 'P7')  # Update current_piece_type to P7
-    else:
-        for i in range(3):
-            if not belts_status[i]:
-                belts_status[i] = True
-                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(2)  # P8 goes to belt {i+1}, performs tool 1 for 45s, skips tool 2, turns around for 40s, -> checks belt 4
-                update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
-                break
-
-def handle_p9(piece):
-    if all(belts_status[:3]) and belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(0)  # P2 Waits until one of the first 3 belts or belt 4 is empty
-    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(1)  # P2 gives priority to P7
-    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] != 2:
-        belts_status[3] = True
-        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
-        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(2)  # P2 goes to belt 4, performs tool 1 for 45s, skips tool 6, turns around for 40s, -> P8
-        update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
-    else:
-        for i in range(3):
-            if not belts_status[i]:
-                belts_status[i] = True
-                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(3)  # P2 goes to belt {i+1}, performs tool 1 for 45s, skips tool 2 for 15s, turns around for 40s, -> P8
-                update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
-                break
-
-        # Handle P9 on belts 5 or 6
-        if all(belts_status[4:6]):
-            client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(0)  # P8 Waits
+    
+                belts_status[i] = True # belt is true whern activated
+                cur = conn.cursor()
+                # Execute the query
+                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
+                # Fetch the result
+                piece_id = cur.fetchone()
+                for i in range(3):
+        if not all(belts_status[:3]):  #idk
+            p6_busy = False
+            belts_status[i] = True #change i so is the belt number? belt is true when activated
+            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(1) # incoming type
+            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(3) # mid_type
+            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(6) # final_type
+            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
+            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
+            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
+            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(40) # time for second transformation
         else:
-            for i in range(4, 6):
-                if not belts_status[i]:
-                    belts_status[i] = True
-                    client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                    client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(1)  # P8 goes to belt {i+1}, performs tool 5 for 45s, skips tool 4, -> P9
-                    update_piece_type(piece['piece_id'], 'P9')  # Update current_piece_type to P9
-                    break
+            p6_busy = True
+            break
+                # we need to extract the acc_time and the current_type
+                # Close communication with the server
+                cur.close()
+def handle_p7(piece):
+                
+                belts_status[i] = True # belt is true when activated
+                cur = conn.cursor()
+                # Execute the query
+                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
+                # Fetch the result
+                piece_id = cur.fetchone()
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(2) # incoming type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(8) # mid_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(7) # final_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(15) # time for second transformation
+                # we need to extract the acc_time and the current_type
+                # Close communication with the server
+                cur.close()
+def handle_p9_1(piece):
+                
+                belts_status[i] = True # belt is true when activated
+                cur = conn.cursor()
+                # Execute the query
+                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
+                # Fetch the result
+                piece_id = cur.fetchone()
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(2) # incoming type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(8) # mid_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(8) # final_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(0) # time for second transformation
+                # we need to extract the acc_time and the current_type
+                # Close communication with the server
+                cur.close()
+def handle_p9_2(piece):
+                
+                belts_status[i] = True # belt is true when activated
+                cur = conn.cursor()
+                # Execute the query
+                cur.execute("SELECT piece_id FROM warehouse WHERE piece_type = %s;", (piece_type))
+                # Fetch the result
+                piece_id = cur.fetchone()
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(8) # incoming type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(9) # mid_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(9) # final_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(0) # time for second transformation
+                # we need to extract the acc_time and the current_type
+                # Close communication with the server
+                cur.close()
 
 def process_orders(pieces):
     # Sort orders based on order ID
@@ -332,7 +368,12 @@ def main():
         #spawn_pieces(conn, client, spawn_queue_1)
         #spawn_pieces(conn, client)
 
+import psycopg2
 
+
+    
+        # Create a new cursor
+       
 
 if __name__ == "__main__":
     
