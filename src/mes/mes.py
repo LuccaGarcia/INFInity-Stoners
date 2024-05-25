@@ -154,19 +154,19 @@ def handle_p6(piece):
                 # Fetch the result
                 piece_id = cur.fetchone()
                 for i in range(3):
-        if not all(belts_status[:3]):  #idk
-            p6_busy = False
-            belts_status[i] = True #change i so is the belt number? belt is true when activated
-            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(1) # incoming type
-            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(3) # mid_type
-            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(6) # final_type
-            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
-            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
-            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
-            client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(40) # time for second transformation
-        else:
-            p6_busy = True
-            break
+            if not all(belts_status[:3]):  #idk
+                p6_busy = False
+                belts_status[i] = True #change i so is the belt number? belt is true when activated
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[0]").set_value(1) # incoming type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[1]").set_value(3) # mid_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_type_array[2]").set_value(6) # final_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Curr_type").get_value() # current_type
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Piece_id").set_value(piece_id) # we get this value from postgres
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[0]").set_value(45) # time for first transformation
+                client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_L_{i}.Transformation_time_array[1]").set_value(40) # time for second transformation
+            else:
+                p6_busy = True
+                break
                 # we need to extract the acc_time and the current_type
                 # Close communication with the server
                 cur.close()
