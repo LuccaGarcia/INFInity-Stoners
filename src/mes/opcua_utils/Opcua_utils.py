@@ -12,7 +12,7 @@ def ValueCheck(node, value):
     while node.get_value() != value:
         pass
 
-def get_incoming_piece_w2(client, line):
+def get_incoming_piece_from_line(client, line):
     
     if line > 5:
         print("Invalid line number")
@@ -79,4 +79,26 @@ def set_outgoing_piece_w1(client, line, piece_struct):
     for node, value in zip(In_Piece_L_x_Transformation_types_array, piece_struct.pop(0)):
         setValueCheck(node, value, ua.VariantType.UInt32)
     
+
+def load_tools(client, conn):
     
+    cur = conn.cursor()
+    
+    cur.execute("SELECT machine_id, Active_tool FROM Machines")
+    machines = cur.fetchall()
+    
+    Set_Tool_Mx_n = [client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.Set_Tool_M{i}") for i in range(1, 13)]
+    
+    #print("len(Set_Tool_Mx_n): ", len(Set_Tool_Mx_n))
+    
+    
+    for machine in machines:
+        
+        machine_id = machine[0]
+        active_tool = machine[1]
+        
+        print(f"Setting tool {active_tool} to machine {machine_id}")
+        
+        setValueCheck(Set_Tool_Mx_n[machine_id-1], active_tool, ua.VariantType.Int16)
+        
+        print(f"Tool {active_tool} set to machine {machine_id}")

@@ -44,8 +44,12 @@ def alocate_warehouse_piece_to_order(conn, order_id, piece_type):
     cur.execute(Query, (piece_type,))
     piece_id = cur.fetchone()[0]
     
+    cur.execute("SELECT final_piece_type FROM Orders WHERE order_id = %s;", (order_id,))
+    final_piece_type = cur.fetchone()[0]
+    
+    
     cur.execute("UPDATE Warehouse SET piece_status = 'Allocated' WHERE piece_id = %s;", (piece_id,))
-    cur.execute("UPDATE Pieces SET order_id = %s WHERE piece_id = %s;", (order_id, piece_id,))
+    cur.execute("UPDATE Pieces SET order_id = %s, final_piece_type = %s, accumulated_time = 0 WHERE piece_id = %s;", (order_id, final_piece_type, piece_id,))
     print("Avaiable Piece", piece_id, "allocated to order", order_id)
     
 
@@ -107,7 +111,7 @@ def create_and_place_spawned_pieces_in_warehouse(conn):
             cur.execute("SELECT final_piece_type FROM Orders WHERE order_id = %s;", (order_id,))
             final_piece_type = cur.fetchone()[0]
             
-            cur.execute("INSERT INTO Pieces (current_piece_type, accumulated_cost, order_id, final_piece_type) VALUES (%s, %s, %s, %s) RETURNING piece_id;", (incoming_piece[0], incoming_piece[1], order_id, final_piece_type))
+            cur.execute("INSERT INTO Pieces (current_piece_type, accumulated_cost, order_id, final_piece_type, accumulated_time) VALUES (%s, %s, %s, %s, 0) RETURNING piece_id;", (incoming_piece[0], incoming_piece[1], order_id, final_piece_type))
             piece_id = cur.fetchone()[0]
         
         cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_status) VALUES (%s, %s, %s);", (1, piece_id,piece_status,))

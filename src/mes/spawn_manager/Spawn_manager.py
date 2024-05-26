@@ -42,7 +42,7 @@ def spawn_pieces(conn, client, pieces):
                 if i <= 1:
                     if Cx == True and piece[1] == 1:
                         
-                        print(f"C{i+1} is ready to spawn piece {piece[0]}")
+                        # print(f"C{i+1} is ready to spawn piece {piece[0]}")
                         
                         # spawn piece in Cx
                         setValueCheck(spawnInCx_node[i], True, ua.VariantType.Boolean)
@@ -57,7 +57,7 @@ def spawn_pieces(conn, client, pieces):
                 if i > 1:
                     if Cx == True and piece[1] == 2:
                         
-                        print(f"C{i+1} is ready to spawn piece {piece[0]}")
+                        # print(f"C{i+1} is ready to spawn piece {piece[0]}")
                         
                         # spawn piece in Cx
                         setValueCheck(spawnInCx_node[i], True, ua.VariantType.Boolean)
@@ -115,3 +115,29 @@ def spawned_piece_counter_cons(conn, queue):
             continue
         id = incoming[0]
         cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (id,))
+
+def get_pieces_from_w2_to_w1(conn, client):
+    
+    cur = conn.cursor()
+    
+    L0_upload_W1_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_0_upload_W1")
+    L0_upload_W1_curr = L0_upload_W1_n.get_value()
+    
+    
+    while True:
+            
+            L0_upload_W1_prev = L0_upload_W1_curr
+            L0_upload_W1_curr = L0_upload_W1_n.get_value()
+            
+            if L0_upload_W1_prev and not L0_upload_W1_curr:
+                print("Piece uploaded from C0")
+                
+                piece_struct = get_incoming_piece_from_line(conn, 0)
+                piece_id = piece_struct[3]
+                
+                cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
+                cur.execute("INSERT INTO Warehouse (piece_id, Warehouse, piece_status) VALUES (%s, 1, 'Allocated');", (piece_id,))
+            
+                
+                
+                    

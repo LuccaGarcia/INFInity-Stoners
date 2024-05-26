@@ -18,6 +18,7 @@ PORT = 5000
 
 EPOCH = 0
 CURRENT_DAY = 0
+PREVIOUS_DAY = 0
 CURRENT_SECONDS = 0
 LAST_SECOND = -1
 DAY_LENGTH = 60
@@ -119,7 +120,7 @@ def check_and_place_buy_order(conn):
         order_list.append([order_id, quantity_p1, quantity_p2])
         
         #update the order status	
-        cur.execute("UPDATE orders SET delivery_status = 'To order' WHERE order_id = %s;", (order[0],))
+        cur.execute("UPDATE orders SET delivery_status = 'Ordered' WHERE order_id = %s;", (order[0],))
         # conn.commit()  
        
     Available_warehouse_P1 = get_free_warehouse_pieces(conn, 1)
@@ -171,11 +172,62 @@ def check_and_place_buy_order(conn):
     
     cur.close()
 
+def set_orders_to_ready_for_production(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT order_id, quantity FROM orders WHERE delivery_status = 'Ordered';")
+    orders = cur.fetchall()
+    
+    print(orders)
+    
+    for order in orders:
+        Query = '''
+        SELECT count(*)
+        FROM Warehouse
+        JOIN Pieces ON Warehouse.piece_id = Pieces.piece_id
+        WHERE Warehouse.Warehouse = 1 AND Pieces.order_id = %s;
+        '''
+        cur.execute(Query,(order[0],))
+        count = cur.fetchone()[0]
+        
+        print(count, order[1], order[0])
+        
+        if count == order[1]:
+            print("All pieces for order", order[0], "are in the warehouse")
+            cur.execute("UPDATE orders SET delivery_status = 'Ready for production' WHERE order_id = %s;", (order[0],))
 
+def new_day(conn):
+    
+    # set_orders_to_ready_for_production(conn)
+    
+    return
+
+def update_work_queue(conn):
+    cur = conn.cursor()
+    
+    #get all pieces in warehouse with status 'Allocated' and not in work queue
+    
+    Query = '''
+    SELECT piece_id 
+    FROM Warehouse 
+    WHERE warehouse = 1 AND 
+        piece_status = 'Allocated' AND 
+        piece_id NOT IN (SELECT piece_id 
+                            FROM ToWorkQueue);
+    '''
+    cur.execute(Query)
+    pieces = cur.fetchall()
+    
+    if pieces == None:
+        return
+    
+    #insert into work queue all pieces that are in warehouse with status 'Allocated' and not in work queue
+    for piece in pieces:
+        cur.execute("INSERT INTO ToWorkQueue (piece_id) VALUES (%s);", (piece[0],))
+        
 def main():
     conn = connect_to_postgresql()
     
-    global EPOCH
+    global EPOCH, PREVIOUS_DAY
     EPOCH = setEpoch(conn)
     
     update_day()
@@ -191,6 +243,13 @@ def main():
     while True:
         
         update_day()
+        
+        if CURRENT_DAY != PREVIOUS_DAY: # Call the new_day function when the day changes
+            new_day(conn)
+            print("New day")
+            PREVIOUS_DAY = CURRENT_DAY
+    
+        
         print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
         
         udp_updater(conn, xml_queue)
@@ -201,7 +260,7 @@ def main():
         
         create_and_place_spawned_pieces_in_warehouse(conn)
         
-        
+        update_work_queue(conn)
     
 
 

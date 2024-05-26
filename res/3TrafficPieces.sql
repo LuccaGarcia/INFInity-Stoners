@@ -4,3 +4,4 @@ CREATE TABLE IF NOT EXISTS
         piece_id INTEGER REFERENCES Pieces(piece_id),
         line_id INTEGER NOT NULL
     );
+
