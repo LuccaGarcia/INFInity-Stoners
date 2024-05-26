@@ -78,7 +78,6 @@ def set_outgoing_piece_w1(client, line, piece_struct):
     
     for node, value in zip(In_Piece_L_x_Transformation_types_array, piece_struct.pop(0)):
         setValueCheck(node, value, ua.VariantType.UInt32)
-    
 
 def load_tools(client, conn):
     

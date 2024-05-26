@@ -130,26 +130,30 @@ def pop_piece_from_w2(conn, client):
     (SELECT piece_id FROM ShippingQueue);
     '''
     
-    cur.execute(Query)
-    pieces = cur.fetchall()
+    while True:
     
-    if pieces == []:
-        print("No pieces to pop")
+        cur.execute(Query)
+        pieces = cur.fetchall()
         
-    for piece in pieces:
+        if pieces == []:
+            time.sleep(0.5)
+            print("No pieces to pop")
+            continue
+            
+        for piece in pieces:
+            
+            piece_id = piece[0]
+            
+            cur.execute("SELECT current_piece_type FROM Pieces WHERE piece_id = %s;", (piece[0],))
+            piece_type = cur.fetchone()[0]
+            
+            # piece_struct = [Acc_time, Curr_type, Index, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+            piece_struct = [0, piece_type, 0, piece_id, [0, 0], [0, 0], [piece_type, 0, 0]]
+            
+            pop_piece_from_w(conn, client, 0, piece_struct)
+            
         
-        piece_id = piece[0]
-        
-        cur.execute("SELECT current_piece_type FROM Pieces WHERE piece_id = %s;", (piece[0],))
-        piece_type = cur.fetchone()[0]
-        
-        # piece_struct = [Acc_time, Curr_type, Index, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
-        piece_struct = [0, piece_type, 0, piece_id, [0, 0], [0, 0], [piece_type, 0, 0]]
-        
-        pop_piece_from_w(conn, client, 0, piece_struct)
-        
-    
-    print(pieces)
+        print(pieces)
 
 def incoming_w2(conn, client):
     
@@ -345,8 +349,13 @@ def main():
     line_manager_thread = threading.Thread(target=line_manager, args=(conn,client), daemon=True)
     line_manager_thread.start()
     
-    comeback_from_w2_thread = threading.Thread(target=get_pieces_from_w2_to_w1, args=(conn, client), daemon=True)
-    comeback_from_w2_thread.start()
+    incoming_piece_w1_from_w2_thread = threading.Thread(target=incoming_piece_w1_from_w2, args=(conn, client), daemon=True)
+    incoming_piece_w1_from_w2_thread.start()
+    
+    w2_piece_poper_thread = threading.Thread(target=pop_piece_from_w2, args=(conn, client), daemon=True)
+    w2_piece_poper_thread.start()
+    
+    
     
     while True:
         updateDay()

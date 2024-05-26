@@ -116,7 +116,7 @@ def spawned_piece_counter_cons(conn, queue):
         id = incoming[0]
         cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (id,))
 
-def get_pieces_from_w2_to_w1(conn, client):
+def incoming_piece_w1_from_w2(conn, client):
     
     cur = conn.cursor()
     
