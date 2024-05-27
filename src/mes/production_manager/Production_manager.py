@@ -77,7 +77,7 @@ def find_available_lines(conn, op_1, op_2 = None):
     lines = cur.fetchall()
     # lines =[][line_id, machine_A, Active_tool_A, machine_B, Active_tool_B]
     
-    print(lines)
+    # print(lines)
     # print(lines[0], "deve ser 1")
     
     cur.execute("SELECT tool FROM Available_transforms WHERE id = %s;", (op_1,))
@@ -115,7 +115,7 @@ def find_available_lines(conn, op_1, op_2 = None):
     
     return avaiable_lines, n_ops
     
-def checks_OpsTable(conn):
+def fill_LineRequests(conn):
     cur = conn.cursor()
     
     while True:
@@ -140,7 +140,7 @@ def checks_OpsTable(conn):
             cur.execute("INSERT INTO LineRequests (op_id, piece_id, lines, n_ops) VALUES (%s, %s, %s, %s);", (op[0], op[1], line_str, n_ops))
             cur.execute("UPDATE OpsTable SET ops_status = 'Requested' WHERE op_id = %s;", (op[0],))
 
-def checks_TWQ(conn):
+def fill_OpsTable(conn):
     cur = conn.cursor()
     
     #get all available transformations
@@ -167,10 +167,12 @@ def checks_TWQ(conn):
         
         cur.execute(Query)
         TW_ids = cur.fetchall()
+        if TW_ids != []:
+            print("TW_ids: ", TW_ids)
         #[piece_id]
 
         if TW_ids == None:
-            time.sleep(0.5)
+            # time.sleep(0.1)
             continue
 
         for id in TW_ids:
@@ -183,13 +185,15 @@ def checks_TWQ(conn):
             paths = nx.all_simple_edge_paths(g, piece[1], piece[2])
             
             for path in paths:
-                # print(path)
-                # print("tid: ", [g.edges[edge]['tid'] for edge in path])
+                print("piece_id: ", id[0])
+                print(path)
+                print("tid: ", [g.edges[edge]['tid'] for edge in path])
                 tids = [g.edges[edge]['tid'] for edge in path]
             
             nops = len(tids)
             
             if nops == 0:
+                print("piece_id: ", id[0])
                 print("NO PATHS")
                 raise Exception("NO PATHS")
                 continue

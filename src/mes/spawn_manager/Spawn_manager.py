@@ -92,8 +92,8 @@ def spawned_piece_counter_prod(client, queue):
     
         for i, (Curr, prev) in enumerate(zip(Cx_upload_curr, Cx_upload_prev)):
             if prev and not Curr:    # detect falling edge
-                print(f"Piece uploaded from C{i+1}")
-                print(f"piece type {1 if i <= 1 else 2} produced")
+                # print(f"Piece uploaded from C{i+1}")
+                # print(f"piece type {1 if i <= 1 else 2} produced")
                 queue.put(1 if i <= 1 else 2)
     
 def spawned_piece_counter_cons(conn, queue): 
@@ -101,12 +101,12 @@ def spawned_piece_counter_cons(conn, queue):
     
     while True:
         if queue.empty():
-            time.sleep(0.1)
+            # time.sleep(0.1)
             continue
         
         piece_type = queue.get()
         
-        print(f"Piece of type {piece_type} consumed")
+        # print(f"Piece of type {piece_type} consumed")
         
         cur.execute("SELECT incoming_id FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = %s ORDER BY incoming_id ASC LIMIT 1;", (piece_type,))
         incoming = cur.fetchone()
@@ -126,17 +126,19 @@ def incoming_piece_w1_from_w2(conn, client):
     
     while True:
             
-            L0_upload_W1_prev = L0_upload_W1_curr
-            L0_upload_W1_curr = L0_upload_W1_n.get_value()
+        L0_upload_W1_prev = L0_upload_W1_curr
+        L0_upload_W1_curr = L0_upload_W1_n.get_value()
+        
+        if L0_upload_W1_prev and not L0_upload_W1_curr:
             
-            if L0_upload_W1_prev and not L0_upload_W1_curr:
-                print("Piece uploaded from C0")
-                
-                piece_struct = get_incoming_piece_from_line(conn, 0)
-                piece_id = piece_struct[3]
-                
-                cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
-                cur.execute("INSERT INTO Warehouse (piece_id, Warehouse, piece_status) VALUES (%s, 1, 'Allocated');", (piece_id,))
+            piece_struct = get_incoming_piece_from_line(client, 0)
+            piece_id = piece_struct[2]
+            
+            print("Detected piece", piece_id, " entering W1 from W2")
+            print("piece_struct: ", piece_struct)
+            
+            cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
+            cur.execute("INSERT INTO Warehouse (piece_id, Warehouse, piece_status) VALUES (%s, 1, 'Allocated');", (piece_id,))
             
                 
                 
