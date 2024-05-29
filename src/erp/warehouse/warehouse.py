@@ -30,7 +30,6 @@ def get_free_incoming_pieces(conn, piece_type):
     return result[0]
 
 
-
 def alocate_warehouse_piece_to_order(conn, order_id, piece_type):
     cur = conn.cursor()
     Query = '''
@@ -83,15 +82,18 @@ def set_pieces_to_spawn(conn, current_day):
     cur = conn.cursor()
     # TODO: set correct query 
     # cur.execute("SELECT incoming_id FROM Incoming WHERE arrival_date <= %s AND piece_status = 'Ordered' ORDER BY incoming_id ASC;", (current_day,))
-    cur.execute("SELECT incoming_id FROM Incoming WHERE piece_status = 'Ordered' ORDER BY incoming_id ASC;")
-    ids = cur.fetchall()
+    # cur.execute("SELECT incoming_id FROM Incoming WHERE piece_status = 'Ordered' ORDER BY incoming_id ASC;")
+    # ids = cur.fetchall()
               
-    for id in ids:
-        print("Requesting piece to spawn")
-        cur.execute("UPDATE Incoming SET piece_status = 'ToSpawn' WHERE incoming_id = %s;", (id[0], ))
+    # for id in ids:
+    #     print("Requesting piece to spawn")
+    #     cur.execute("UPDATE Incoming SET piece_status = 'ToSpawn' WHERE incoming_id = %s;", (id[0], ))
+    
+    cur.execute("UPDATE Incoming SET piece_status = 'ToSpawn' WHERE arrival_date <= %s AND piece_status = 'Ordered';",(current_day,))
+    cur.close()
         
 
-def create_and_place_spawned_pieces_in_warehouse(conn):
+def create_and_place_spawned_pieces_in_warehouse(conn, current_day):
     cur = conn.cursor()
     cur.execute("SELECT piece_type, cost, order_id, incoming_id FROM Incoming WHERE piece_status = 'InWarehouse' ORDER BY incoming_id ASC;")
     
@@ -103,7 +105,7 @@ def create_and_place_spawned_pieces_in_warehouse(conn):
         
         if incoming_piece[2] == None: # if the piece is not allocated to an order
             piece_status = 'Free'
-            cur.execute("INSERT INTO Pieces (current_piece_type, accumulated_cost) VALUES (%s, %s) RETURNING piece_id;", (incoming_piece[0], incoming_piece[1]))
+            cur.execute("INSERT INTO Pieces (current_piece_type, accumulated_cost, arrival_date) VALUES (%s, %s) RETURNING piece_id;", (incoming_piece[0], incoming_piece[1], current_day))
             piece_id = cur.fetchone()[0]
             
         else:   # if the piece is allocated to an order
@@ -113,7 +115,7 @@ def create_and_place_spawned_pieces_in_warehouse(conn):
             cur.execute("SELECT final_piece_type FROM Orders WHERE order_id = %s;", (order_id,))
             final_piece_type = cur.fetchone()[0]
             
-            cur.execute("INSERT INTO Pieces (current_piece_type, accumulated_cost, order_id, final_piece_type, accumulated_time) VALUES (%s, %s, %s, %s, 0) RETURNING piece_id;", (incoming_piece[0], incoming_piece[1], order_id, final_piece_type))
+            cur.execute("INSERT INTO Pieces (current_piece_type, accumulated_cost, order_id, final_piece_type, accumulated_time, arrival_date) VALUES (%s, %s, %s, %s, 0, %s) RETURNING piece_id;", (incoming_piece[0], incoming_piece[1], order_id, final_piece_type, current_day))
             piece_id = cur.fetchone()[0]
         
         cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_status) VALUES (%s, %s, %s);", (1, piece_id,piece_status,))

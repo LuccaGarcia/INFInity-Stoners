@@ -1,15 +1,20 @@
 from opcua import Client,ua
+from dotenv import load_dotenv
+import os
+import time
 
 
 # Set the value of a node and wait until the value is set
 def setValueCheck(node, value, variant_type):
     node.set_value(ua.Variant(value, variant_type))
     while node.get_value() != value:
+        time.sleep(0.1)
         pass
 
 # Wait until the value of a node is set
 def ValueCheck(node, value):
     while node.get_value() != value:
+        time.sleep(0.1)
         pass
 
 def get_incoming_piece_from_line(client, line):
@@ -115,4 +120,6 @@ def load_tools(client, conn):
         
     #     print(f"Tool {active_tool} set to machine {machine_id}")
         
-    
+def create_client():
+    load_dotenv()
+    return Client(os.getenv("OPCUA_SERVER_ADDRESS"))

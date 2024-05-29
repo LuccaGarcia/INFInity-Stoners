@@ -5,7 +5,8 @@ from production_manager.Production_manager import *
 from opcua import Client, ua
 import time
 from dotenv import load_dotenv
-import threading
+from threading import Thread
+from multiprocessing import Process
 import queue
 
 # Load .env file
@@ -17,9 +18,7 @@ CURRENT_SECONDS = 0
 DAY_LENGTH = 60
 LAST_SECOND = -1
 CRONUS = False #if true KILL ALL THE CHILDREN
-OPCUA_CLIENT = []
 
-OPCUA_SERVER_ADDRESS = os.getenv("OPCUA_SERVER_ADDRESS")
 
 def updateDay():
     global CURRENT_DAY
@@ -119,7 +118,10 @@ def pop_piece_from_w(conn, client, line, piece_struct):
     
     cur.execute("INSERT INTO TrafficPieces (piece_id, line_id) VALUES (%s, %s);",(piece_id, line,))
 
-def pop_piece_from_w2(conn, client):
+def pop_piece_from_w2():
+    conn = connect_to_postgresql()
+    client = create_client()
+    client.connect()
     cur = conn.cursor()
     
     Query = '''
@@ -136,7 +138,7 @@ def pop_piece_from_w2(conn, client):
         pieces = cur.fetchall()
         
         if pieces == []:
-            # time.sleep(0.1)
+            time.sleep(0.1)
             # print("No pieces to pop")
             continue
             
@@ -155,12 +157,10 @@ def pop_piece_from_w2(conn, client):
             print("piece_struct: ", piece_struct)
             pop_piece_from_w(conn, client, 0, piece_struct)
             
-        
+        time.sleep(0.1)
         # print(pieces)
 
-def incoming_w2(conn, client):
-    
-    cur = conn.cursor()
+def incoming_w2_producer(client, incoming_w2_queue):
     
     L_x_upload_W2_n = [client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_{i}_upload_W2") for i in range(1, 7)]
     
@@ -176,50 +176,66 @@ def incoming_w2(conn, client):
                 print(f"Piece uploaded from L{i+1} to W2")
                 
                 incoming_piece_struct = get_incoming_piece_from_line(client, i+1)
-                # piece_struct = [Acc_time, Curr_type, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
                 
-                if incoming_piece_struct[0] == None:
-                    print("WTF time is none?")
-                    incoming_piece_struct[0] = 0
+                incoming_w2_queue.put(incoming_piece_struct)
+                print("produceds piece struct: ", incoming_piece_struct)
+        
+        time.sleep(0.1)
                 
-                acc_time = (incoming_piece_struct[0] // 1000)   # Convert from ms to s
-                curr_type = incoming_piece_struct[1]
-                piece_id = incoming_piece_struct[2]
-                
-                cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
-                cur.execute("UPDATE Pieces SET accumulated_time = %s, current_piece_type = %s WHERE piece_id = %s;", (acc_time, curr_type, piece_id))
-                cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_status) VALUES (2, %s, 'Allocated');", (piece_id,)) 
-                cur.execute("DELETE FROM OpsTable WHERE piece_id = %s", (piece_id,))
-
-                #Verify: curr_type = fin_type
-                cur.execute("SELECT current_piece_type, final_piece_type FROM Pieces WHERE piece_id = %s", (piece_id,))
-                current_piece_type, final_piece_type = cur.fetchone()
-
-                if(current_piece_type == final_piece_type):
-                    #Piece doesn't need more work
-                    print("Piece ",piece_id," doesn't need more work")
-                    cur.execute("DELETE FROM ToWorkQueue WHERE piece_id = %s", (piece_id,))
-                    cur.execute("INSERT INTO ShippingQueue (piece_id) VALUES (%s)", (piece_id,))
-                
-def new_day(conn):
-    #get orders that are ready for production
-        #update order status to 'InProduction'
-    
-    #iterate over all the pieces assinged to the orders
-        #add pieces to the work queue
-    return
-
-def line_manager(conn, client):
+def incoming_w2_consumer(conn, incoming_w2_queue):
+    # piece_struct = [Acc_time, Curr_type, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
     
     cur = conn.cursor()
     
     while True:
+        
+        if incoming_w2_queue.empty():
+            time.sleep(0.1)
+            continue
+        
+        incoming_piece_struct = incoming_w2_queue.get()
+        
+        print("consumed piece struct: ", incoming_piece_struct)
+        
+        if incoming_piece_struct[0] == None:
+            print("WTF time is none?")
+            incoming_piece_struct[0] = 0
+        
+        acc_time = (incoming_piece_struct[0] // 1000)   # Convert from ms to s
+        curr_type = incoming_piece_struct[1]
+        piece_id = incoming_piece_struct[2]
+        
+        cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
+        cur.execute("UPDATE Pieces SET accumulated_time = %s, current_piece_type = %s WHERE piece_id = %s;", (acc_time, curr_type, piece_id))
+        cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_status) VALUES (2, %s, 'Allocated');", (piece_id,)) 
+        cur.execute("DELETE FROM OpsTable WHERE piece_id = %s", (piece_id,))
+
+        #Verify: curr_type = fin_type
+        cur.execute("SELECT current_piece_type, final_piece_type FROM Pieces WHERE piece_id = %s", (piece_id,))
+        current_piece_type, final_piece_type = cur.fetchone()
+
+        if(current_piece_type == final_piece_type):
+            #Piece doesn't need more work
+            print("Piece ",piece_id," doesn't need more work")
+            cur.execute("DELETE FROM ToWorkQueue WHERE piece_id = %s", (piece_id,))
+            cur.execute("SELECT order_id FROM Pieces WHERE piece_id = %s", (piece_id,))
+            order_id = cur.fetchone()
+            cur.execute("INSERT INTO ShippingQueue (piece_id, order_id) VALUES (%s, %s)", (piece_id, order_id,))
+
+                    
+def line_manager():
+    conn = connect_to_postgresql()
+    client = create_client()
+    client.connect()
+    cur = conn.cursor()
     
-        request_id, line_id = fulfill_line_request(conn)
+    while True:
+    
+        request_id, line_id = fulfill_line_request(conn, client)
         #line id from 1 to 6
         
         if request_id == -1:
-            # time.sleep(0.1)
+            time.sleep(0.1)
             continue #no requests to fulfill
         
         #with request id get op_id, n_ops searching linerequests
@@ -310,70 +326,272 @@ def line_manager(conn, client):
             else:
                 print("no tool available")
                 raise Exception("no tool available")
-                continue
         
         piece_struct = [acc_time*1000, curr_type, piece_id, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
         
         cur.execute("DELETE FROM LineRequests WHERE request_id = %s;", (request_id,))
         
         pop_piece_from_w(conn, client, line_id, piece_struct)
-     
+    
 
+def spawned_piece_counter():
+    
+    client = create_client()
+    client.connect()
+
+    counter_queue = queue.Queue()
+    
+    spawned_piece_counter_prod_thread = Thread(target=spawned_piece_counter_prod, args=(client, counter_queue), daemon=True)
+    spawned_piece_counter_prod_thread.start()
+    
+    spawned_piece_counter_cons_thread = Thread(target=spawned_piece_counter_cons, args=(connect_to_postgresql(), counter_queue), daemon=True)
+    spawned_piece_counter_cons_thread.start()
+    
+    spawned_piece_counter_cons_thread.join()
+    spawned_piece_counter_prod_thread.join()
+    client.disconnect()
+    
+
+def incoming_w2():
+    client = create_client()
+    client.connect()
+    incoming_w2_queue = queue.Queue()
+    
+    incoming_w2_producer_thread = Thread(target=incoming_w2_producer, args=(client,incoming_w2_queue), daemon=True)
+    incoming_w2_producer_thread.start()
+    
+    incoming_w2_consumer_thread = Thread(target=incoming_w2_consumer, args=(connect_to_postgresql(), incoming_w2_queue), daemon=True)
+    incoming_w2_consumer_thread.start() 
+    
+    
+def pop_piece_for_delivery(line, piece_type):
+    
+    client = create_client()
+    client.connect()
+
+
+    spawn_in_U_x_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnIn_U_{line}")
+    U_x_ready_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.U_{line}_ready")
+    U_x_piece_type_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_U_{line}.Curr_type")
+    
+    ValueCheck(U_x_ready_n, True) # Wait for the line to be ready
+    
+    setValueCheck(U_x_piece_type_n, piece_type, ua.VariantType.UInt32) # Set the piece type to be sent to the line
+    
+    setValueCheck(spawn_in_U_x_n, True, ua.VariantType.Boolean) # Spawn the piece
+    
+    ValueCheck(U_x_ready_n, False) # Wait for the piece to be spawned    
+
+    setValueCheck(spawn_in_U_x_n, False, ua.VariantType.Boolean) # Reset the spawn flag
+    
+    client.disconnect()
+    
+def purge_shipping_lines(conn,client, line):
+    
+    cur = conn.cursor()
+    
+    U_x_empty = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.U_{line}_empty")
+    
+    if U_x_empty.get_value() == True:
+        return
+    
+    UnloadingOrderU_x = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.UnloadingOrderU_{line}")
+    
+    setValueCheck(UnloadingOrderU_x, True, ua.VariantType.Boolean)
+    ValueCheck(U_x_empty, True)
+    setValueCheck(UnloadingOrderU_x, False, ua.VariantType.Boolean)
+    
+    cur.execute("DELETE FROM ShippingQueue WHERE shipping_line = %s;", (line,))
+    
+    return
+    
+    
+    
+    
+    
+    
+
+def shipping_orders(conn, epoch):
+    
+    client = create_client()
+    client.connect()
         
+    while True:
+        
+        time.sleep(1)
+    
+        now = time.time()
+        
+        current_day = int((now - epoch) // 60) + 1
+        
+        current_seconds = int((now - epoch) % 60)
+        
+        
+        if current_seconds > 45:
+            
+            
+            
+            purge_line_1_thread = Thread(target=purge_shipping_lines, args=(conn, client, 1), daemon=True)
+            purge_line_2_thread = Thread(target=purge_shipping_lines, args=(conn, client,  2), daemon=True)
+            purge_line_3_thread = Thread(target=purge_shipping_lines, args=(conn, client, 3), daemon=True)
+            purge_line_4_thread = Thread(target=purge_shipping_lines, args=(conn, client, 4), daemon=True)
+            
+            purge_line_1_thread.start()
+            purge_line_2_thread.start()
+            purge_line_3_thread.start()
+            purge_line_4_thread.start()
+            
+        
+        
+        if current_seconds > 38:    
+            continue
+        
+        cur = conn.cursor()
+        
+        
+        
+        line_occupancy_query = '''
+            SELECT SUM(CASE WHEN shipping_line = 1 then 1 else 0 end) as line_1,
+                    SUM(CASE WHEN shipping_line = 2 then 1 else 0 end) as line_2,
+                    SUM(CASE WHEN shipping_line = 3 then 1 else 0 end) as line_3,
+                    SUM(CASE WHEN shipping_line = 4 then 1 else 0 end) as line_4
+            FROM ShippingQueue'''
+        
+
+        cur.execute("SELECT order_id, final_piece_type, quantity FROM Orders WHERE delivery_status = 'Ready for delivery' AND due_date <= %s ORDER BY order_id", (current_day,))
+        orders = cur.fetchall()
+        #order = [order_id, final_piece_type, quantity]
+        
+        if orders == []: # if there is no order ready to ship
+            time.sleep(0.1)
+            continue
+        
+            
+        for order in orders:    
+            
+            print("Shipping order: ", order)
+            
+            quantity = order[2]
+            
+            required_lines = -(-quantity//6)
+            
+            print("quantity: ", quantity, "required_lines: ", required_lines)
+            
+            cur.execute(line_occupancy_query)
+            line_occupancy = cur.fetchone()
+            
+            if line_occupancy == []: # data base problems
+                raise Exception("Where are my lines?? :(")
+            
+            if line_occupancy.count(0) < required_lines: # if there are not enough lines available 
+                time.sleep(0.1)
+                continue
+            
+            selected_lines = [i for i, _ in zip([i+1 for i, line in enumerate(line_occupancy) if line == 0] , range(required_lines))]
+            
+            print("selected_lines: ", selected_lines)
+            
+            
+            for i in range(quantity):
+                i = i+1
+                print("Shipping piece: ", i, "of", quantity, "from order: ", order[0])
+                
+                piece_to_pop_query = '''
+                SELECT Warehouse.id, Pieces.piece_id
+                FROM Warehouse
+                JOIN Pieces ON Warehouse.piece_id = Pieces.piece_id
+                JOIN Orders ON Pieces.order_id = Orders.order_id
+                WHERE Warehouse.Warehouse = 2 AND Orders.order_id = %s
+                Order BY Pieces.piece_id ASC LIMIT 1;
+                '''
+                
+                cur.execute(piece_to_pop_query,(order[0],))
+                result = cur.fetchone()
+                # result = [warehouse_id, piece_id]
+                
+                if result == None:
+                    print("No pieces to pop")
+                    continue
+                
+                print("poped piece: ", result[1], " from W2 to U ", selected_lines[-(-i//6)-1])
+                
+                cur.execute("DELETE FROM Warehouse WHERE id = %s;", (result[0],))
+                
+                
+                pop_piece_for_delivery( selected_lines[-(-i//6)-1], order[1])
+                cur.execute("UPDATE ShippingQueue SET shipping_line = %s WHERE piece_id = %s;", (selected_lines[-(-i//6)-1], result[1],))
+            
+            cur.execute("UPDATE Orders SET delivery_status = 'Delivered', delivery_date = %s WHERE order_id = %s;", (current_day, order[0],))
+            
+            query = '''
+                UPDATE Orders
+                SET final_cost = (SELECT SUM(accumulated_cost + accumulated_time + accumulated_cost * (Orders.delivery_date - arrival_date)*0.01)
+                                    FROM Pieces
+                                    JOIN Orders ON Pieces.order_id = Orders.order_id
+                                    WHERE Pieces.order_id = %s)
+                WHERE order_id = %s;
+                '''
+            
+            cur.execute(query, (order[0], order[0]))
+            
+            cur.execute("SELECT due_date, delivery_date, early_penalty, late_penalty FROM Orders WHERE order_id = %s;", (order[0],))
+            due_date, delivery_date, early_penalty, late_penalty = cur.fetchone()
+            
+            if(delivery_date == due_date):
+                penalty = 0
+            elif(delivery_date > due_date):
+                penalty = (delivery_date - due_date) * late_penalty
+            elif(delivery_date < due_date):
+                penalty = (due_date - delivery_date) * early_penalty
+            
+            cur.execute("UPDATE Orders SET final_cost = final_cost + %s WHERE order_id = %s;", (penalty, order[0]))
+           
+
 def main():
     conn = connect_to_postgresql() # Connect to the database
+
     
     global EPOCH
     EPOCH = setEpoch(conn)
     
     updateDay()
     
-    clients = [Client(OPCUA_SERVER_ADDRESS) for _ in range(6)]
-    print(clients)
-    
-    # client = Client(OPCUA_SERVER_ADDRESS) # Connect to the OPCUA server
+    client = create_client() # Connect to the OPCUA server
     global OPCUA_CLIENT
     
-    for client in clients:
-        OPCUA_CLIENT.append(client)
+    OPCUA_CLIENT = client
         
-    for client in clients:
-        client.connect()
+    client.connect()
     
     load_tools(client, conn)
     
-    spawn_thread = threading.Thread(target=spawn_manager, args=(connect_to_postgresql(), clients.pop(0)), daemon=True)
-    spawn_thread.start()
+    spawned_piece_counter_process = Process(target=spawned_piece_counter, daemon=True)
+    spawned_piece_counter_process.start()
     
-    counter_queue = queue.Queue(maxsize=40)
+    spawn_manager_process = Process(target=spawn_manager, daemon=True)
+    spawn_manager_process.start()
     
-    spawn_counter_producer_thread = threading.Thread(target=spawned_piece_counter_prod, args=(clients.pop(0), counter_queue), daemon=True)
-    spawn_counter_producer_thread.start()
-    
-    spawned_piece_counter_cons_thread = threading.Thread(target=spawned_piece_counter_cons, args=(connect_to_postgresql(), counter_queue), daemon=True)
-    spawned_piece_counter_cons_thread.start()
-    
-    incoming_w2_thread = threading.Thread(target=incoming_w2, args=(connect_to_postgresql(), clients.pop(0)), daemon=True)
-    incoming_w2_thread.start()
+    incoming_w2_process = Process(target=incoming_w2, daemon=True)
+    incoming_w2_process.start()
 
-    check_TWQ_thread = threading.Thread(target=fill_OpsTable, args=(connect_to_postgresql(),), daemon=True)
-    check_TWQ_thread.start()
+    fill_Ops_table_process = Process(target=fill_OpsTable, daemon=True)
+    fill_Ops_table_process.start()
 
-    check_OpsTable_thread = threading.Thread(target=fill_LineRequests, args=(connect_to_postgresql(),), daemon=True)
-    check_OpsTable_thread.start()
+    fill_lineRequests_process = Process(target=fill_LineRequests, daemon=True)
+    fill_lineRequests_process.start()
 
-    line_manager_thread = threading.Thread(target=line_manager, args=(connect_to_postgresql(),clients.pop(0)), daemon=True)
-    line_manager_thread.start()
+    line_manager_process = Process(target=line_manager, daemon=True)
+    line_manager_process.start()
     
-    incoming_piece_w1_from_w2_thread = threading.Thread(target=incoming_piece_w1_from_w2, args=(connect_to_postgresql(), clients.pop(0)), daemon=True)
-    incoming_piece_w1_from_w2_thread.start()
+    incoming_piece_w1_from_w2_process = Process(target=incoming_piece_w1_from_w2, daemon=True)
+    incoming_piece_w1_from_w2_process.start()
     
-    w2_piece_poper_thread = threading.Thread(target=pop_piece_from_w2, args=(connect_to_postgresql(), clients.pop(0)), daemon=True)
-    w2_piece_poper_thread.start()
+    w2_piece_poper_process = Process(target=pop_piece_from_w2, daemon=True)
+    w2_piece_poper_process.start()
     
-    print("clients length: ", len(clients))
-    
-    
+
+    shipping_thread = Thread(target=shipping_orders, args=(conn, EPOCH), daemon=True)
+    shipping_thread.start()
     
     while True:
         updateDay()
@@ -387,12 +605,6 @@ if __name__ == "__main__":
         CRONUS = True
         print("Exiting...")
         time.sleep(0.2)
-                
-        clients = OPCUA_CLIENT
-        print(clients)
-        for i, client in enumerate(clients):
-            client.disconnect()
-            print(f"Disconnected from OPCUA server {i}")
-        # OPCUA_CLIENT.disconnect()
+        OPCUA_CLIENT.disconnect()
         print("Disconnected from OPCUA server")
         exit(0)

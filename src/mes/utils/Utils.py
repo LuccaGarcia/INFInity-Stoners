@@ -1,9 +1,10 @@
 import psycopg2
-from dotenv import load_dotenv
-import os
 import time
 
+import os
+from dotenv import load_dotenv
 def connect_to_postgresql():
+    load_dotenv()
     try:
         # Construct the connection string
         database = os.getenv('DATABASE_NAME')

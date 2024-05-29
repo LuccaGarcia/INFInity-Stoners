@@ -4,5 +4,6 @@ CREATE TABLE IF NOT EXISTS Pieces(
     current_piece_type INTEGER NOT NULL,
     final_piece_type INTEGER,
     accumulated_cost INTEGER,
-    accumulated_time INTEGER
+    accumulated_time INTEGER,
+    arrival_date INTEGER
 );

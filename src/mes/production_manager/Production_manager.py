@@ -1,8 +1,28 @@
 import time
 import networkx as nx
 
+import psycopg2
+import os
+from dotenv import load_dotenv
+def connect_to_postgresql():
+    load_dotenv()
+    try:
+        # Construct the connection string
+        database = os.getenv('DATABASE_NAME')
+        user = os.getenv('DATABASE_USER')
+        password = os.getenv('DATABASE_PASSWORD')
+        host = os.getenv('DATABASE_HOST')
+        
+        conn = psycopg2.connect(database=database, user=user, password=password, host=host)
+        conn.set_session(autocommit=True)
+        print("Connection to PostgreSQL database successful.")
+        return conn
+    except psycopg2.Error as e:
+        print("Error: Unable to connect to the PostgreSQL database:", e)
+        return None
 
-def fulfill_line_request(conn):
+
+def fulfill_line_request(conn, client):
     cur = conn.cursor()
     
     get_ocuppation_query = '''
@@ -50,15 +70,18 @@ def fulfill_line_request(conn):
         # print("ocupation: ", ocupation)
         # print("sorted indexes: ", sorted_indexes)
         
-        for index in sorted_indexes:
+        for line_index in sorted_indexes:
             
-            if index + 1 in possible_lines:
-                if ocupation[index] > 3:
+            Line_ready_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_{line_index + 1}_ready")
+            Line_ready = Line_ready_n.get_value()
+            
+            if line_index + 1 in possible_lines:
+                if ocupation[line_index] > 3 or Line_ready == False:
                     # print("line is full")
                     continue
                 else:
                     # print("request_id: ", request_id, " would go to line: ", index + 1)
-                    return request_id, index + 1
+                    return request_id, line_index + 1
         
     return -1, -1 #no requests to fulfill
         
@@ -115,11 +138,15 @@ def find_available_lines(conn, op_1, op_2 = None):
     
     return avaiable_lines, n_ops
     
-def fill_LineRequests(conn):
+def fill_LineRequests():
+    conn = connect_to_postgresql()
     cur = conn.cursor()
     
     while True:
+        time.sleep(0.1)
         #get all pending operations
+        
+        #TODO: maybe the sorting order of this query is not the best
         cur.execute("SELECT op_id, piece_id, op_1, op_2 FROM OpsTable WHERE ops_status = 'Pending' ORDER BY piece_id")
         pending_ops = cur.fetchall()
 
@@ -130,7 +157,6 @@ def fill_LineRequests(conn):
             if available_lines == []:
                 print("No available lines fodeu, how, como?, porque, sera que estou em alagoinha?")
                 raise Exception("No available lines")
-                continue
 
             line_str = ""
             
@@ -140,7 +166,8 @@ def fill_LineRequests(conn):
             cur.execute("INSERT INTO LineRequests (op_id, piece_id, lines, n_ops) VALUES (%s, %s, %s, %s);", (op[0], op[1], line_str, n_ops))
             cur.execute("UPDATE OpsTable SET ops_status = 'Requested' WHERE op_id = %s;", (op[0],))
 
-def fill_OpsTable(conn):
+def fill_OpsTable():
+    conn = connect_to_postgresql()
     cur = conn.cursor()
     
     #get all available transformations
@@ -165,6 +192,8 @@ def fill_OpsTable(conn):
     
     while True:
         
+        time.sleep(0.1)
+        
         cur.execute(Query)
         TW_ids = cur.fetchall()
         if TW_ids != []:
@@ -172,7 +201,7 @@ def fill_OpsTable(conn):
         #[piece_id]
 
         if TW_ids == None:
-            # time.sleep(0.1)
+            time.sleep(0.1)
             continue
 
         for id in TW_ids:
@@ -196,7 +225,6 @@ def fill_OpsTable(conn):
                 print("piece_id: ", id[0])
                 print("NO PATHS")
                 raise Exception("NO PATHS")
-                continue
             
             #fill ops table -> STATUS = Pending
             if nops == 1:

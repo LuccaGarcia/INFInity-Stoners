@@ -1,12 +1,9 @@
 import xml.etree.ElementTree as ET
 import psycopg2
 from dotenv import load_dotenv
-import os
 import time
-import sys
 from utils.Utils import *
 from warehouse.warehouse import *
-import asyncio
 import socket
 import threading
 import queue
@@ -224,6 +221,27 @@ def update_work_queue(conn):
     for piece in pieces:
         cur.execute("INSERT INTO ToWorkQueue (piece_id) VALUES (%s);", (piece[0],))
         
+def set_orders_to_ready_for_delivery(conn):
+    cur = conn.cursor()
+    
+    Query = '''
+    SELECT Orders.order_id
+    FROM Orders
+    JOIN ShippingQueue ON Orders.order_id = ShippingQueue.order_id
+    WHERE delivery_status = 'Ordered'
+    GROUP BY Orders.order_id
+    HAVING COUNT(Orders.order_id) = Orders.quantity
+    ORDER BY Orders.order_id ASC;
+    '''
+    
+    cur.execute(Query)
+    order_ids = cur.fetchall()
+    
+    for id in order_ids:
+        print("Order", id[0], "is ready for delivery")
+        cur.execute("UPDATE Orders SET delivery_status = 'Ready for delivery' WHERE order_id = %s;", (id[0],))
+
+
 def main():
     conn = connect_to_postgresql()
     
@@ -258,9 +276,11 @@ def main():
         
         set_pieces_to_spawn(conn, CURRENT_DAY)
         
-        create_and_place_spawned_pieces_in_warehouse(conn)
+        create_and_place_spawned_pieces_in_warehouse(conn, CURRENT_DAY)
         
         update_work_queue(conn)
+        
+        set_orders_to_ready_for_delivery(conn)
     
 
 

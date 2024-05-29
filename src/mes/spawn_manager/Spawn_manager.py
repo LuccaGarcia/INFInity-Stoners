@@ -3,6 +3,26 @@ from opcua_utils.Opcua_utils import *
 import time
 import queue
 
+import psycopg2
+import os
+from dotenv import load_dotenv
+def connect_to_postgresql():
+    load_dotenv()
+    try:
+        # Construct the connection string
+        database = os.getenv('DATABASE_NAME')
+        user = os.getenv('DATABASE_USER')
+        password = os.getenv('DATABASE_PASSWORD')
+        host = os.getenv('DATABASE_HOST')
+        
+        conn = psycopg2.connect(database=database, user=user, password=password, host=host)
+        conn.set_session(autocommit=True)
+        print("Connection to PostgreSQL database successful.")
+        return conn
+    except psycopg2.Error as e:
+        print("Error: Unable to connect to the PostgreSQL database:", e)
+        return None
+
 
 def get_spawn_queue(conn):
     cur = conn.cursor()
@@ -68,17 +88,24 @@ def spawn_pieces(conn, client, pieces):
                         # pop piece from list in index j
                         pieces.pop(j)
                         break
+        
+        time.sleep(0.1)
     
     # print("All pieces spawned")
     
     cur.close()
                          
-def spawn_manager(conn, client):
+def spawn_manager():
+    conn = connect_to_postgresql()
+    
+    client = create_client()
+    client.connect()
     
     while True:
         
         queue = get_spawn_queue(conn)
         spawn_pieces(conn, client, queue)
+        time.sleep(0.1)
 
 def spawned_piece_counter_prod(client, queue):
     
@@ -95,13 +122,15 @@ def spawned_piece_counter_prod(client, queue):
                 # print(f"Piece uploaded from C{i+1}")
                 # print(f"piece type {1 if i <= 1 else 2} produced")
                 queue.put(1 if i <= 1 else 2)
+        
+        time.sleep(0.1)
     
 def spawned_piece_counter_cons(conn, queue): 
     cur = conn.cursor()
     
     while True:
         if queue.empty():
-            # time.sleep(0.1)
+            time.sleep(0.1)
             continue
         
         piece_type = queue.get()
@@ -116,8 +145,10 @@ def spawned_piece_counter_cons(conn, queue):
         id = incoming[0]
         cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (id,))
 
-def incoming_piece_w1_from_w2(conn, client):
-    
+def incoming_piece_w1_from_w2():
+    conn = connect_to_postgresql()
+    client = create_client()
+    client.connect()
     cur = conn.cursor()
     
     L0_upload_W1_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_0_upload_W1")
@@ -139,6 +170,8 @@ def incoming_piece_w1_from_w2(conn, client):
             
             cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
             cur.execute("INSERT INTO Warehouse (piece_id, Warehouse, piece_status) VALUES (%s, 1, 'Allocated');", (piece_id,))
+
+        time.sleep(0.1)
             
                 
                 
