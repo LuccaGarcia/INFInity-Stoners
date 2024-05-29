@@ -8,13 +8,13 @@ import time
 def setValueCheck(node, value, variant_type):
     node.set_value(ua.Variant(value, variant_type))
     while node.get_value() != value:
-        time.sleep(0.1)
+        time.sleep(0.2)
         pass
 
 # Wait until the value of a node is set
 def ValueCheck(node, value):
     while node.get_value() != value:
-        time.sleep(0.1)
+        time.sleep(0.2)
         pass
 
 def get_incoming_piece_from_line(client, line):

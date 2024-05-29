@@ -89,7 +89,7 @@ def spawn_pieces(conn, client, pieces):
                         pieces.pop(j)
                         break
         
-        time.sleep(0.1)
+        time.sleep(0.2)
     
     # print("All pieces spawned")
     
@@ -105,14 +105,22 @@ def spawn_manager():
         
         queue = get_spawn_queue(conn)
         spawn_pieces(conn, client, queue)
-        time.sleep(0.1)
+        time.sleep(0.2)
 
-def spawned_piece_counter_prod(client, queue):
+def spawned_piece_counter_prod(client,conn, queue):
+    
+    cur = conn.cursor()
     
     Cx_upload_n = [client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C{i}_upload") for i in range(1, 5)]
     Cx_upload_curr = [node.get_value() for node in Cx_upload_n]
     
     while True:
+        
+        cur.execute("SELECT incoming_id from incoming;")
+        
+        if cur.fetchone() == None:
+            time.sleep(0.2)
+            continue
         
         Cx_upload_prev = [value for value in Cx_upload_curr]
         Cx_upload_curr = [node.get_value() for node in Cx_upload_n]
@@ -123,14 +131,14 @@ def spawned_piece_counter_prod(client, queue):
                 # print(f"piece type {1 if i <= 1 else 2} produced")
                 queue.put(1 if i <= 1 else 2)
         
-        time.sleep(0.1)
+        time.sleep(0.2)
     
 def spawned_piece_counter_cons(conn, queue): 
     cur = conn.cursor()
     
     while True:
         if queue.empty():
-            time.sleep(0.1)
+            time.sleep(0.2)
             continue
         
         piece_type = queue.get()
@@ -145,10 +153,10 @@ def spawned_piece_counter_cons(conn, queue):
         id = incoming[0]
         cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (id,))
 
-def incoming_piece_w1_from_w2():
+def incoming_piece_w1_from_w2(client):
     conn = connect_to_postgresql()
-    client = create_client()
-    client.connect()
+    # client = create_client()
+    # client.connect()
     cur = conn.cursor()
     
     L0_upload_W1_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_0_upload_W1")
@@ -171,7 +179,7 @@ def incoming_piece_w1_from_w2():
             cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
             cur.execute("INSERT INTO Warehouse (piece_id, Warehouse, piece_status) VALUES (%s, 1, 'Allocated');", (piece_id,))
 
-        time.sleep(0.1)
+        time.sleep(0.2)
             
                 
                 

@@ -9,10 +9,10 @@ PORT = SERVER_ADDRESS[1]  # Extract port from address
 xml_data = """
 <DOCUMENT>
 <Client NameId="Client AA"/>
-<Order Number="18" WorkPiece="P5" Quantity="8" DueDate="12" LatePen="10" EarlyPen="5"/>
-<Order Number="19" WorkPiece="P6" Quantity="8" DueDate="13" LatePen="10" EarlyPen="5"/>
-<Order Number="20" WorkPiece="P7" Quantity="8" DueDate="14" LatePen="10" EarlyPen="5"/>
 <Order Number="21" WorkPiece="P9" Quantity="8" DueDate="15" LatePen="10" EarlyPen="10"/>
+<Order Number="20" WorkPiece="P7" Quantity="8" DueDate="14" LatePen="10" EarlyPen="5"/>
+<Order Number="19" WorkPiece="P6" Quantity="8" DueDate="13" LatePen="10" EarlyPen="5"/>
+<Order Number="18" WorkPiece="P5" Quantity="8" DueDate="12" LatePen="10" EarlyPen="5"/>
 </DOCUMENT>
 """
 

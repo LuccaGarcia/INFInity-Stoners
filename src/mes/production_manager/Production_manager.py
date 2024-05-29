@@ -143,7 +143,7 @@ def fill_LineRequests():
     cur = conn.cursor()
     
     while True:
-        time.sleep(0.1)
+        time.sleep(0.2)
         #get all pending operations
         
         #TODO: maybe the sorting order of this query is not the best
@@ -192,7 +192,7 @@ def fill_OpsTable():
     
     while True:
         
-        time.sleep(0.1)
+        time.sleep(0.2)
         
         cur.execute(Query)
         TW_ids = cur.fetchall()
@@ -201,7 +201,7 @@ def fill_OpsTable():
         #[piece_id]
 
         if TW_ids == None:
-            time.sleep(0.1)
+            time.sleep(0.2)
             continue
 
         for id in TW_ids:

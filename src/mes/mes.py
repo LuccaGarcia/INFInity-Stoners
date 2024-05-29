@@ -27,7 +27,7 @@ def updateDay():
     global LAST_SECOND
     
     while LAST_SECOND == CURRENT_SECONDS:
-        time.sleep(0.1) # Sleep for a short time to avoid busy waiting
+        time.sleep(0.2) # Sleep for a short time to avoid busy waiting
         now = -(-time.time() // 1) #inderger division black magic to round up
         CURRENT_DAY = int((now - EPOCH) // DAY_LENGTH) + 1
         CURRENT_SECONDS = int((now - EPOCH) % DAY_LENGTH)
@@ -118,10 +118,10 @@ def pop_piece_from_w(conn, client, line, piece_struct):
     
     cur.execute("INSERT INTO TrafficPieces (piece_id, line_id) VALUES (%s, %s);",(piece_id, line,))
 
-def pop_piece_from_w2():
+def pop_piece_from_w2(client):
     conn = connect_to_postgresql()
-    client = create_client()
-    client.connect()
+    # client = create_client()
+    # client.connect()
     cur = conn.cursor()
     
     Query = '''
@@ -138,7 +138,7 @@ def pop_piece_from_w2():
         pieces = cur.fetchall()
         
         if pieces == []:
-            time.sleep(0.1)
+            time.sleep(0.2)
             # print("No pieces to pop")
             continue
             
@@ -157,7 +157,7 @@ def pop_piece_from_w2():
             print("piece_struct: ", piece_struct)
             pop_piece_from_w(conn, client, 0, piece_struct)
             
-        time.sleep(0.1)
+        time.sleep(0.2)
         # print(pieces)
 
 def incoming_w2_producer(client, incoming_w2_queue):
@@ -180,7 +180,7 @@ def incoming_w2_producer(client, incoming_w2_queue):
                 incoming_w2_queue.put(incoming_piece_struct)
                 print("produceds piece struct: ", incoming_piece_struct)
         
-        time.sleep(0.1)
+        time.sleep(0.2)
                 
 def incoming_w2_consumer(conn, incoming_w2_queue):
     # piece_struct = [Acc_time, Curr_type, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
@@ -190,7 +190,7 @@ def incoming_w2_consumer(conn, incoming_w2_queue):
     while True:
         
         if incoming_w2_queue.empty():
-            time.sleep(0.1)
+            time.sleep(0.2)
             continue
         
         incoming_piece_struct = incoming_w2_queue.get()
@@ -235,7 +235,7 @@ def line_manager():
         #line id from 1 to 6
         
         if request_id == -1:
-            time.sleep(0.1)
+            time.sleep(0.2)
             continue #no requests to fulfill
         
         #with request id get op_id, n_ops searching linerequests
@@ -247,7 +247,14 @@ def line_manager():
         
         #with op_id get piece_id, op_1 and / or op_2, searching ops table if ops_status = 'Requested'
         cur.execute("SELECT piece_id, op_1, op_2 FROM OpsTable WHERE op_id = %s AND ops_status = 'Requested';", (op_id,))
-        piece_id, op_1, op_2 = cur.fetchone()
+        
+        result = cur.fetchone()
+        
+        if result == None:
+            continue
+        
+        
+        piece_id, op_1, op_2 = result
         
         print("piece_id: ", piece_id, "op_1: ", op_1, "op_2: ", op_2)
        
@@ -338,13 +345,15 @@ def spawned_piece_counter():
     
     client = create_client()
     client.connect()
+    
+    conn = connect_to_postgresql()
 
     counter_queue = queue.Queue()
     
-    spawned_piece_counter_prod_thread = Thread(target=spawned_piece_counter_prod, args=(client, counter_queue), daemon=True)
+    spawned_piece_counter_prod_thread = Thread(target=spawned_piece_counter_prod, args=(client,conn, counter_queue), daemon=True)
     spawned_piece_counter_prod_thread.start()
     
-    spawned_piece_counter_cons_thread = Thread(target=spawned_piece_counter_cons, args=(connect_to_postgresql(), counter_queue), daemon=True)
+    spawned_piece_counter_cons_thread = Thread(target=spawned_piece_counter_cons, args=(conn, counter_queue), daemon=True)
     spawned_piece_counter_cons_thread.start()
     
     spawned_piece_counter_cons_thread.join()
@@ -427,7 +436,7 @@ def shipping_orders(conn, epoch):
         current_seconds = int((now - epoch) % 60)
         
         
-        if current_seconds > 45:
+        if current_seconds > 50:
             
             
             
@@ -463,7 +472,7 @@ def shipping_orders(conn, epoch):
         #order = [order_id, final_piece_type, quantity]
         
         if orders == []: # if there is no order ready to ship
-            time.sleep(0.1)
+            time.sleep(0.2)
             continue
         
             
@@ -484,7 +493,7 @@ def shipping_orders(conn, epoch):
                 raise Exception("Where are my lines?? :(")
             
             if line_occupancy.count(0) < required_lines: # if there are not enough lines available 
-                time.sleep(0.1)
+                time.sleep(0.2)
                 continue
             
             selected_lines = [i for i, _ in zip([i+1 for i, line in enumerate(line_occupancy) if line == 0] , range(required_lines))]
@@ -547,6 +556,18 @@ def shipping_orders(conn, epoch):
             cur.execute("UPDATE Orders SET final_cost = final_cost + %s WHERE order_id = %s;", (penalty, order[0]))
            
 
+def incoming_and_pop_piece():
+    
+    client = create_client()
+    client.connect()
+    
+    incoming_piece_w1_from_w2_trhread = Thread(target=incoming_piece_w1_from_w2, args=(client,), daemon=True)
+    incoming_piece_w1_from_w2_trhread.start()
+    
+    w2_piece_poper_thread = Thread(target=pop_piece_from_w2, args=(client,), daemon=True)
+    w2_piece_poper_thread.start()
+    
+
 def main():
     conn = connect_to_postgresql() # Connect to the database
 
@@ -583,11 +604,8 @@ def main():
     line_manager_process = Process(target=line_manager, daemon=True)
     line_manager_process.start()
     
-    incoming_piece_w1_from_w2_process = Process(target=incoming_piece_w1_from_w2, daemon=True)
-    incoming_piece_w1_from_w2_process.start()
-    
-    w2_piece_poper_process = Process(target=pop_piece_from_w2, daemon=True)
-    w2_piece_poper_process.start()
+    incoming_and_pop_piece_process = Process(target=incoming_and_pop_piece, daemon=True)
+    incoming_and_pop_piece_process.start()
     
 
     shipping_thread = Thread(target=shipping_orders, args=(conn, EPOCH), daemon=True)
