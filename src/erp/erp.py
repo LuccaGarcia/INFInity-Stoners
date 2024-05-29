@@ -9,9 +9,12 @@ import threading
 import queue
 import xml.etree.ElementTree as ET
 
+# Load .env file
+load_dotenv()
+
 # Replace with your desired host and port
 HOST = '0.0.0.0'  # Listen on all interfaces
-PORT = 24680
+PORT = int(os.getenv('UDP_PORT'))
 
 EPOCH = 0
 CURRENT_DAY = 0
@@ -20,8 +23,6 @@ CURRENT_SECONDS = 0
 LAST_SECOND = -1
 DAY_LENGTH = 60
 
-# Load .env file
-load_dotenv()
 
 def update_day():
     global CURRENT_DAY
