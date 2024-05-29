@@ -1,12 +1,13 @@
-from utils.Utils import connect_to_postgresql
-from opcua import Client
+from utils.Utils import *
+from opcua_utils.Opcua_utils import *
+from spawn_manager.Spawn_manager import *
+from production_manager.Production_manager import *
+from opcua import Client, ua
 import time
-from opcua import ua
 from dotenv import load_dotenv
-import threading
+from threading import Thread
+from multiprocessing import Process
 import queue
-import xml.etree.ElementTree as ET
-
 
 # Load .env file
 load_dotenv()
@@ -16,31 +17,7 @@ CURRENT_DAY = 0
 CURRENT_SECONDS = 0
 DAY_LENGTH = 60
 LAST_SECOND = -1
-CRONUS = False #if true KILL ALL THE CHILDREN
-OPCUA_CLIENT = None
 
-
-def setEpoch(conn):
-    """
-    This function retrieves the current epoch from the database.
-    """
-    cur = conn.cursor()
-    #read the epoch from the database if it exists
-    cur.execute("SELECT epoch FROM Bigbang;")
-    result = cur.fetchone()
-
-    #if not, set the epoch to the current time
-    if result is None:
-        cur.execute("INSERT INTO Bigbang (epoch) VALUES (%s);", (time.time(),))
-        conn.commit()
-        print("Epoch set to current time")
-
-    cur.execute("SELECT epoch FROM Bigbang;")
-    result = cur.fetchone()
-    global EPOCH
-    EPOCH = result[0]
-    
-    cur.close()
 
 def updateDay():
     global CURRENT_DAY
@@ -49,352 +26,601 @@ def updateDay():
     global LAST_SECOND
     
     while LAST_SECOND == CURRENT_SECONDS:
-        time.sleep(0.1) # Sleep for a short time to avoid busy waiting
+        time.sleep(0.2) # Sleep for a short time to avoid busy waiting
         now = -(-time.time() // 1) #inderger division black magic to round up
         CURRENT_DAY = int((now - EPOCH) // DAY_LENGTH) + 1
         CURRENT_SECONDS = int((now - EPOCH) % DAY_LENGTH)
     
     LAST_SECOND = CURRENT_SECONDS
 
-def setup_machines_tools(): #setting tools for the machines
-    defined_tools = [1][1][1][1][5][5][2][2][2][6][4][4] #Z-like numbering of tools
+def pop_piece_from_w1_forced(conn, client, line):
     
-    machine_node_ids = ["ns=4;s=|var|CODESYS Control Win V3 x64.Application.C_Manager.C1.MachineTop.CurrentTool", #m1.1#
-                        "ns=2;i=1235", 
-                        "ns=2;i=1236", 
-                        "ns=2;i=1237", 
-                        "ns=2;i=1238", 
-                        "ns=2;i=1235", 
-                        "ns=4;s=|var|CODESYS Control Win V3 x64.Application.C_Manager.C1.MachineBot.CurrentTool", #m2.1#
-                        "ns=2;i=1235", 
-                        "ns=2;i=1236", 
-                        "ns=2;i=1237", 
-                        "ns=2;i=1238", 
-                        "ns=2;i=1235",] #m2.6 
-                        #fill the right values
-    machines_obey = [Client.get_node(node_id) for node_id in machine_node_ids]
-
-    for i, value in enumerate(defined_tools):
-        machines_obey[i].set_value(value)
-    
-    setup_correct = all(machines_obey[i].get_value() == defined_tools[i] for i in range(len(defined_tools)))
-
-    if setup_correct:
-        print("THE MACHINES ARE SET AND READY TO OBEY, MASTER")
-    else:
-        print("THE SETUP OF MACHINES IS INCORRECT. WE WILL NOT OBEY ANYMORE")
-
-
-#TODO def produce_peace():
-# read table of warehouse from ERP
-# if piece_status is allocated and order status is tobedone
-# start algorithms made by Joao, change accumulated cost after each step, update status in the end.
-#shitcode starts
-def update_piece_type(cur, piece_id, new_type):
-    cur.execute("UPDATE pieces SET current_piece_type = %s WHERE piece_id = %s;", (new_type, piece_id))
-    cur.connection.commit()
-
-# Belts status (True means occupied, False means free)
-# belts_status = [
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt1").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt2").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt3").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt4").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt5").get_value(),
-#     client.get_node("ns=2;s=|var|YourPLCProject.Belt6").get_value()
-# ]
-
-def handle_p5(piece):
-    if all(belts_status[:3]) and belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(0)  # P1 Waits until one of the first 3 belts or belt 4 is empty
-    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(1)  # P1 gives priority to P7
-    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] != 2:
-        belts_status[3] = True
-        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(2)  # P1 goes to belt 4, performs tool 1 for 45s, skips tool 6, turns around for 40s, -> P3
-        update_piece_type(piece['piece_id'], 'P3')  # Update current_piece_type to P3
-    else:
-        for i in range(3):
-            if not belts_status[i]:
-                belts_status[i] = True
-                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(3)  # P1 goes to belt {i+1}, performs tool 1 for 45s, tool 2 for 15s, turns around for 40s, -> P4
-                update_piece_type(piece['piece_id'], 'P4')  # Update current_piece_type to P4
-                break
-
-def handle_p6(piece):
-    if all(belts_status[:3]):
-        client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(4)  # P1 Waits until any of the first 3 belts is empty
-    else:
-        for i in range(3):
-            if not belts_status[i]:
-                belts_status[i] = True
-                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P1Status").set_value(5)  # P1 goes to belt {i+1}, performs tool 1 for 45s, tool 2 for 15s, turns around for 40s, -> P4
-                update_piece_type(piece['piece_id'], 'P4')  # Update current_piece_type to P4
-                break
-
-def handle_p7(piece):
-    if belts_status[3] and all(belts_status[:3]):
-        client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(0)  # P8 Waits
-    elif not belts_status[3]:
-        belts_status[3] = True
-        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
-        client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(1)  # P8 goes to belt 4, performs tool 1 for 45s, tool 6 for 15s, -> P7
-        update_piece_type(piece['piece_id'], 'P7')  # Update current_piece_type to P7
-    else:
-        for i in range(3):
-            if not belts_status[i]:
-                belts_status[i] = True
-                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(2)  # P8 goes to belt {i+1}, performs tool 1 for 45s, skips tool 2, turns around for 40s, -> checks belt 4
-                update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
-                break
-
-def handle_p9(piece):
-    if all(belts_status[:3]) and belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(0)  # P2 Waits until one of the first 3 belts or belt 4 is empty
-    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] == 2:
-        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(1)  # P2 gives priority to P7
-    elif all(belts_status[:3]) and not belts_status[3] and piece['status'] != 2:
-        belts_status[3] = True
-        client.get_node("ns=2;s=|var|YourPLCProject.Belt4").set_value(True)
-        client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(2)  # P2 goes to belt 4, performs tool 1 for 45s, skips tool 6, turns around for 40s, -> P8
-        update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
-    else:
-        for i in range(3):
-            if not belts_status[i]:
-                belts_status[i] = True
-                client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                client.get_node("ns=2;s=|var|YourPLCProject.P2Status").set_value(3)  # P2 goes to belt {i+1}, performs tool 1 for 45s, skips tool 2 for 15s, turns around for 40s, -> P8
-                update_piece_type(piece['piece_id'], 'P8')  # Update current_piece_type to P8
-                break
-
-        # Handle P9 on belts 5 or 6
-        if all(belts_status[4:6]):
-            client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(0)  # P8 Waits
-        else:
-            for i in range(4, 6):
-                if not belts_status[i]:
-                    belts_status[i] = True
-                    client.get_node(f"ns=2;s=|var|YourPLCProject.Belt{i+1}").set_value(True)
-                    client.get_node("ns=2;s=|var|YourPLCProject.P8Status").set_value(1)  # P8 goes to belt {i+1}, performs tool 5 for 45s, skips tool 4, -> P9
-                    update_piece_type(piece['piece_id'], 'P9')  # Update current_piece_type to P9
-                    break
-
-def process_orders(pieces):
-    # Sort orders based on order ID
-    pieces.sort(key=lambda x: int(x['order_id']))
-
-    for piece in pieces:
-        if piece['final_piece_type'] == 'P5':
-            handle_p5(piece)
-        elif piece['final_piece_type'] == 'P6':
-            handle_p6(piece)
-        elif piece['final_piece_type'] == 'P7':
-            handle_p7(piece)
-        elif piece['final_piece_type'] == 'P9':
-            handle_p9(piece)
-        else:
-            pass  # Handle unknown piece type
-    cur.close()
-
-#shitcode ends
-
-# Function to set the value of a node and check if the value is set
-def setValueCheck(node, value, variant_type):
-    node.set_value(ua.Variant(value, variant_type))
-    while node.get_value() != value:
-        pass
-
-def ValueCheck(node, value):
-    while node.get_value() != value:
-        pass
-
-def spawn_pieces(conn, client, spawn_queue):
-
-    global CRONUS
-
-    while not CRONUS:
-
-        if spawn_queue.empty():
-            continue
-
-        try:
-            # Get data from the queue (blocks until data is available)
-            piece = spawn_queue.get(block=False)
-            print("Pieces to spawn:", piece)
-        except queue.Empty:
-            # Handle situations where no data is available in the queue (optional)
-            print("No pieces to spawn")    
-            continue
-
-        C1_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C1_ready")
-        spawnInC1 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC1")
-
-        C2_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C2_ready")
-        spawnInC2 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC2")
-
-        C3_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C3_ready")
-        spawnInC3 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC3")
-
-        C4_ready = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C4_ready")
-        spawnInC4 = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnInC4")
-
-        cur = conn.cursor()
-
-
-        if piece[1] == 1:
-            if C1_ready.get_value() == True:#check conveyor status==free
-                #send command to spawn piece
-                print("Piece to spawn id:", piece[0])
-                setValueCheck(spawnInC1, True, ua.VariantType.Boolean)
-                ValueCheck(C1_ready, False)
-                setValueCheck(spawnInC1, False, ua.VariantType.Boolean)
-                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-                conn.commit()
-            elif C2_ready.get_value() == True:
-                print("Piece to spawn id:", piece[0])
-                setValueCheck(spawnInC2, True, ua.VariantType.Boolean)
-                ValueCheck(C2_ready, False)
-                setValueCheck(spawnInC2, False, ua.VariantType.Boolean)
-                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-                conn.commit()
-        elif piece[1] == 2:
-            if C3_ready.get_value() == True:
-                print("Piece to spawn id:", piece[0])
-                setValueCheck(spawnInC3, True, ua.VariantType.Boolean)
-                ValueCheck(C3_ready, False)
-                setValueCheck(spawnInC3, False, ua.VariantType.Boolean)
-                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-                conn.commit()
-            elif C4_ready.get_value() == True:
-                print("Piece to spawn id:", piece[0])
-                setValueCheck(spawnInC4, True, ua.VariantType.Boolean)
-                ValueCheck(C4_ready, False)
-                setValueCheck(spawnInC4, False, ua.VariantType.Boolean)
-                cur.execute("UPDATE Incoming SET piece_status = 'Spawned' WHERE incoming_id = %s;", (piece[0], ))
-                conn.commit()
-
-        cur.close()
-
-def spawned_piece_counter(conn, client):
-    
-    global CRONUS
+    spawnIn_L_x = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnIn_L_{line}")
+    L_x_ready = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_{line}_ready")
     
     
     cur = conn.cursor()
     
-    C1_upload_n = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C1_upload")
-    C2_upload_n = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C2_upload")
-    C3_upload_n = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C3_upload")
-    C4_upload_n = client.get_node("ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.C4_upload")
+    Query = '''
+    SELECT Warehouse.id, Warehouse.piece_id, Pieces.current_piece_type
+    FROM Warehouse
+    JOIN Pieces ON Warehouse.piece_id = Pieces.piece_id
+    WHERE Warehouse.warehouse = 1 AND Pieces.current_piece_type = 1 AND Warehouse.piece_status = 'Allocated'
+    ORDER BY Warehouse.id ASC;
+    ''' 
 
-    C1_upload_cur = C1_upload_n.get_value()
-    C2_upload_cur = C2_upload_n.get_value()
-    C3_upload_cur = C3_upload_n.get_value()
-    C4_upload_cur = C4_upload_n.get_value()
-
-
-    while not CRONUS:
-        # update the current and previous values of the upload signals
-        C1_upload_prev = C1_upload_cur
-        C1_upload_cur = C1_upload_n.get_value()
-        C2_upload_prev = C2_upload_cur
-        C2_upload_cur = C2_upload_n.get_value()
-        C3_upload_prev = C3_upload_cur
-        C3_upload_cur = C3_upload_n.get_value()
-        C4_upload_prev = C4_upload_cur
-        C4_upload_cur = C4_upload_n.get_value()
-        
-        if C1_upload_prev and not C1_upload_cur: #falling edge
-            print("C1 upload signal detected")
-            cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = 1 ORDER BY incoming_id asc LIMIT 1;")
-            incoming_id = cur.fetchone()[0]
-            cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (incoming_id,))
-            conn.commit()
-        if C2_upload_prev and not C2_upload_cur: #falling edge
-            print("C2 upload signal detected")
-            cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = 1 ORDER BY incoming_id asc LIMIT 1;")
-            incoming_id = cur.fetchone()[0]
-            cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (incoming_id,))
-            conn.commit()
-        if C3_upload_prev and not C3_upload_cur: #falling edge
-            print("C3 upload signal detected")
-            cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = 2 ORDER BY incoming_id asc LIMIT 1;")
-            incoming_id = cur.fetchone()[0]
-            cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (incoming_id,))
-            conn.commit()
-        if C4_upload_prev and not C4_upload_cur: #falling edge
-            print("C4 upload signal detected")
-            cur.execute("SELECT * FROM Incoming WHERE piece_status = 'Spawned' AND piece_type = 2 ORDER BY incoming_id asc LIMIT 1;")
-            incoming_id = cur.fetchone()[0]
-            cur.execute("UPDATE Incoming SET piece_status = 'InWarehouse' WHERE incoming_id = %s;", (incoming_id,))
-            conn.commit()
-
-    cur.close()
-    
-            
-            
-            
-def look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2):
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM Incoming WHERE piece_status = 'ToSpawn' ORDER BY incoming_id ASC;")
+    cur.execute(Query)
     pieces = cur.fetchall()
-    cur.close()
-
-    for piece in pieces:
-        if piece[1] == 1:
-            spawn_queue_1.put(piece)
-        if piece[1] == 2:
-            spawn_queue_2.put(piece)
-
-
-#def read_orders to    
-def main():
-    conn = connect_to_postgresql()
     
-    setEpoch(conn)
+    # pieces = [][warehouse_id, warehouse, piece_id, piece_type, piece_status]
+    # pieces = [][warehouse_id, piece_id, piece_type]
+    
+    
+    if pieces == []:
+        # print("No pieces to pop")
+        return -1
+    
+    for piece in pieces:
+        
+        ValueCheck(L_x_ready, True) # Wait for the line to be ready
+        
+        cur.execute("INSERT INTO TrafficPieces (piece_id, line_id) VALUES (%s, %s);",(piece[1], line,))
+        cur.execute("DELETE FROM Warehouse WHERE id = %s;", (piece[0],))
+        
+        piece_struct = []
+        # piece_struct = [Acc_time, Curr_type, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+        # Transformation_times_array = [time1, time2]
+        # Transformation_tools_array = [tool1, tool2]
+        # Transformation_types_array = [type1, type2, type3]
+        #                                in     mid    out
+        
+        
+        # hard coded values for p3 production in line 1 machine 1
+        
+        piece_struct.append(0)          # Accumulated time
+        piece_struct.append(piece[2])   # Current type
+        piece_struct.append(piece[1])   # Piece ID
+        piece_struct.append([45000, 0]) # Transformation times
+        piece_struct.append([1, 0])     # Transformation tools
+        piece_struct.append([piece[2], 3, 3])   # Transformation types
+        
+        set_outgoing_piece_w1(client, line, piece_struct)
+
+        setValueCheck(spawnIn_L_x, True, ua.VariantType.Boolean)
+        ValueCheck(L_x_ready, False)
+        setValueCheck(spawnIn_L_x, False, ua.VariantType.Boolean)
+        
+def pop_piece_from_w(conn, client, line, piece_struct):
+    # print(piece_struct)
+    # piece_struct = [Acc_time, Curr_type, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+    # Transformation_times_array = [time1, time2]
+    # Transformation_tools_array = [tool1, tool2]
+    # Transformation_types_array = [type1, type2, type3]
+    #                                in     mid    out
+    
+    cur = conn.cursor()
+    
+    spawnIn_L_x = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnIn_L_{line}")
+    L_x_ready = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_{line}_ready")
+    
+    ValueCheck(L_x_ready, True) # Wait for the line to be ready
+    
+    piece_id = piece_struct[2]
+    
+    cur.execute("DELETE FROM Warehouse WHERE piece_id = %s;", (piece_id,)) 
+
+    set_outgoing_piece_w1(client, line, piece_struct) # Set the piece data to be sent to the line
+    
+    setValueCheck(spawnIn_L_x, True, ua.VariantType.Boolean)
+    ValueCheck(L_x_ready, False)
+    setValueCheck(spawnIn_L_x, False, ua.VariantType.Boolean)
+    
+    cur.execute("INSERT INTO TrafficPieces (piece_id, line_id) VALUES (%s, %s);",(piece_id, line,))
+
+def pop_piece_from_w2(client):
+    conn = connect_to_postgresql()
+    # client = create_client()
+    # client.connect()
+    cur = conn.cursor()
+    
+    Query = '''
+    SELECT Warehouse.piece_id 
+    FROM Warehouse
+    JOIN Pieces ON Warehouse.piece_id = Pieces.piece_id 
+    WHERE Warehouse.Warehouse = 2
+    AND Pieces.current_piece_type != Pieces.final_piece_type;
+    '''
+    
+    while True:
+    
+        cur.execute(Query)
+        pieces = cur.fetchall()
+        
+        if pieces == []:
+            time.sleep(0.2)
+            # print("No pieces to pop")
+            continue
+            
+        for piece in pieces:
+            
+            piece_id = piece[0]
+            
+            cur.execute("SELECT current_piece_type FROM Pieces WHERE piece_id = %s;", (piece[0],))
+            piece_type = cur.fetchone()[0]
+            
+            # piece_struct = [Acc_time, Curr_type, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+            piece_struct = [0, piece_type, piece_id, [0, 0], [0, 0], [piece_type, 0, 0]]
+            
+            
+            print("poped piece: ", piece_id, " from W2 to W1")
+            print("piece_struct: ", piece_struct)
+            pop_piece_from_w(conn, client, 0, piece_struct)
+            
+        time.sleep(0.2)
+        # print(pieces)
+
+def incoming_w2_producer(client, incoming_w2_queue):
+    
+    L_x_upload_W2_n = [client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.L_{i}_upload_W2") for i in range(1, 7)]
+    
+    L_x_upload_W2_cur = [value.get_value() for value in L_x_upload_W2_n]
+    
+    while True:
+        
+        L_x_upload_W2_prev = [value for value in L_x_upload_W2_cur]
+        L_x_upload_W2_cur = [value.get_value() for value in L_x_upload_W2_n]
+        
+        for i, (curr, prev) in enumerate(zip(L_x_upload_W2_cur, L_x_upload_W2_prev)):
+            if prev and not curr: # Detect falling edge
+                print(f"Piece uploaded from L{i+1} to W2")
+                
+                incoming_piece_struct = get_incoming_piece_from_line(client, i+1)
+                
+                incoming_w2_queue.put(incoming_piece_struct)
+                print("produceds piece struct: ", incoming_piece_struct)
+        
+        time.sleep(0.2)
+                
+def incoming_w2_consumer(conn, incoming_w2_queue):
+    # piece_struct = [Acc_time, Curr_type, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+    
+    cur = conn.cursor()
+    
+    while True:
+        
+        if incoming_w2_queue.empty():
+            time.sleep(0.2)
+            continue
+        
+        incoming_piece_struct = incoming_w2_queue.get()
+        
+        print("consumed piece struct: ", incoming_piece_struct)
+        
+        if incoming_piece_struct[0] == None:
+            print("WTF time is none?")
+            incoming_piece_struct[0] = 0
+        
+        acc_time = (incoming_piece_struct[0] // 1000)   # Convert from ms to s
+        curr_type = incoming_piece_struct[1]
+        piece_id = incoming_piece_struct[2]
+        
+        cur.execute("DELETE FROM TrafficPieces WHERE piece_id = %s;", (piece_id,))
+        cur.execute("UPDATE Pieces SET accumulated_time = %s, current_piece_type = %s WHERE piece_id = %s;", (acc_time, curr_type, piece_id))
+        cur.execute("INSERT INTO Warehouse (warehouse, piece_id, piece_status) VALUES (2, %s, 'Allocated');", (piece_id,)) 
+        cur.execute("DELETE FROM OpsTable WHERE piece_id = %s", (piece_id,))
+
+        #Verify: curr_type = fin_type
+        cur.execute("SELECT current_piece_type, final_piece_type FROM Pieces WHERE piece_id = %s", (piece_id,))
+        current_piece_type, final_piece_type = cur.fetchone()
+
+        if(current_piece_type == final_piece_type):
+            #Piece doesn't need more work
+            print("Piece ",piece_id," doesn't need more work")
+            cur.execute("DELETE FROM ToWorkQueue WHERE piece_id = %s", (piece_id,))
+            cur.execute("SELECT order_id FROM Pieces WHERE piece_id = %s", (piece_id,))
+            order_id = cur.fetchone()
+            cur.execute("INSERT INTO ShippingQueue (piece_id, order_id) VALUES (%s, %s)", (piece_id, order_id,))
+
+                    
+def line_manager():
+    conn = connect_to_postgresql()
+    client = create_client()
+    client.connect()
+    cur = conn.cursor()
+    
+    while True:
+    
+        request_id, line_id = fulfill_line_request(conn, client)
+        #line id from 1 to 6
+        
+        if request_id == -1:
+            time.sleep(0.2)
+            continue #no requests to fulfill
+        
+        #with request id get op_id, n_ops searching linerequests
+        
+        cur.execute("SELECT op_id, n_ops FROM LineRequests WHERE request_id = %s;", (request_id,))
+        op_id, n_ops = cur.fetchone()
+        
+        print("op_id: ", op_id, "n_ops: ", n_ops)
+        
+        #with op_id get piece_id, op_1 and / or op_2, searching ops table if ops_status = 'Requested'
+        cur.execute("SELECT piece_id, op_1, op_2 FROM OpsTable WHERE op_id = %s AND ops_status = 'Requested';", (op_id,))
+        
+        result = cur.fetchone()
+        
+        if result == None:
+            continue
+        
+        
+        piece_id, op_1, op_2 = result
+        
+        print("piece_id: ", piece_id, "op_1: ", op_1, "op_2: ", op_2)
+       
+        # piece_struct = [Acc_time, Curr_type, Piece_ID, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+        # Transformation_times_array = [time1, time2]
+        # Transformation_tools_array = [tool1, tool2]
+        # Transformation_types_array = [type1, type2, type3]
+        #                                in     mid    out
+
+        #with piece_id get piece_struct from pieces table
+        cur.execute("SELECT accumulated_time, current_piece_type FROM Pieces WHERE piece_id = %s;", (piece_id,))
+        acc_time, curr_type = cur.fetchone()
+        
+        #with op1 and op2 serach for avaiable transformations and get piece_types, tool type and time for each op
+        if n_ops == 1:
+            cur.execute("SELECT start_piece_type, end_piece_type, tool, processing_time FROM Available_transforms WHERE id = %s;", (op_1,))
+            op1_start_piece_type, op1_end_piece_type, op1_tool, op1_time = cur.fetchone()
+            
+            #Check piece_type
+            if curr_type != op1_start_piece_type:
+                raise Exception("piece_type does not match")
+            
+            query = '''
+            SELECT line_id, ma.Active_tool, mb.Active_tool
+            FROM Lines
+            Join Machines AS ma ON Lines.machine_A = ma.machine_id
+            Join Machines AS mb ON Lines.machine_B = mb.machine_id
+            WHERE line_id = %s;
+            '''
+            cur.execute(query, (line_id,))
+            line_id, ma_tool, mb_tool = cur.fetchone()
+            
+            if ma_tool == op1_tool:
+                print("fill piece struct and pop on Ma")
+                #fill piece struct and pop
+                Transformation_times_array = [op1_time*1000, 0]
+                Transformation_tools_array = [ma_tool, 0]
+                Transformation_types_array = [op1_start_piece_type, op1_end_piece_type, op1_end_piece_type]
+            elif mb_tool == op1_tool:
+                print("fill piece struct and pop on Mb")
+                Transformation_times_array = [0, op1_time*1000]
+                Transformation_tools_array = [0, mb_tool]
+                Transformation_types_array = [op1_start_piece_type, op1_start_piece_type, op1_end_piece_type]                
+                #fill piece struct and pop 
+            else:
+                print("no tool available")
+                raise Exception("no tool available")
+                continue
+        elif n_ops == 2:
+            cur.execute("SELECT start_piece_type, end_piece_type, tool, processing_time FROM Available_transforms WHERE id = %s;", (op_1,))
+            op1_start_piece_type, op1_end_piece_type, op1_tool, op1_time = cur.fetchone()
+            
+            cur.execute("SELECT start_piece_type, end_piece_type, tool, processing_time FROM Available_transforms WHERE id = %s;", (op_2,))
+            op2_start_piece_type, op2_end_piece_type, op2_tool, op2_time = cur.fetchone()
+            
+            #Check piece_type
+            if curr_type != op1_start_piece_type or op1_end_piece_type != op2_start_piece_type:
+                raise Exception("piece_type does not match")
+            
+            query = '''
+            SELECT line_id, ma.Active_tool, mb.Active_tool
+            FROM Lines
+            Join Machines AS ma ON Lines.machine_A = ma.machine_id
+            Join Machines AS mb ON Lines.machine_B = mb.machine_id
+            WHERE line_id = %s;
+            '''
+            cur.execute(query, (line_id,))
+            line_id, ma_tool, mb_tool = cur.fetchone()
+            
+            if ma_tool == op1_tool and mb_tool == op2_tool:
+                Transformation_times_array = [op1_time*1000, op2_time*1000]
+                Transformation_tools_array = [ma_tool, mb_tool]
+                Transformation_types_array = [op1_start_piece_type, op1_end_piece_type, op2_end_piece_type]
+                print("fill piece struct and pop on Ma and Mb")
+                #fill piece struct and pop
+            else:
+                print("no tool available")
+                raise Exception("no tool available")
+        
+        piece_struct = [acc_time*1000, curr_type, piece_id, Transformation_times_array, Transformation_tools_array, Transformation_types_array]
+        
+        cur.execute("DELETE FROM LineRequests WHERE request_id = %s;", (request_id,))
+        
+        pop_piece_from_w(conn, client, line_id, piece_struct)
+    
+
+def spawned_piece_counter():
+    
+    client = create_client()
+    client.connect()
+    
+    conn = connect_to_postgresql()
+
+    counter_queue = queue.Queue()
+    
+    spawned_piece_counter_prod_thread = Thread(target=spawned_piece_counter_prod, args=(client,conn, counter_queue), daemon=True)
+    spawned_piece_counter_prod_thread.start()
+    
+    spawned_piece_counter_cons_thread = Thread(target=spawned_piece_counter_cons, args=(conn, counter_queue), daemon=True)
+    spawned_piece_counter_cons_thread.start()
+    
+    spawned_piece_counter_cons_thread.join()
+    spawned_piece_counter_prod_thread.join()
+    client.disconnect()
+    
+
+def incoming_w2():
+    client = create_client()
+    client.connect()
+    incoming_w2_queue = queue.Queue()
+    
+    incoming_w2_producer_thread = Thread(target=incoming_w2_producer, args=(client,incoming_w2_queue), daemon=True)
+    incoming_w2_producer_thread.start()
+    
+    incoming_w2_consumer_thread = Thread(target=incoming_w2_consumer, args=(connect_to_postgresql(), incoming_w2_queue), daemon=True)
+    incoming_w2_consumer_thread.start() 
+    
+    
+def pop_piece_for_delivery(line, piece_type):
+    
+    client = create_client()
+    client.connect()
+
+
+    spawn_in_U_x_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.spawnIn_U_{line}")
+    U_x_ready_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.U_{line}_ready")
+    U_x_piece_type_n = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.In_Piece_U_{line}.Curr_type")
+    
+    ValueCheck(U_x_ready_n, True) # Wait for the line to be ready
+    
+    setValueCheck(U_x_piece_type_n, piece_type, ua.VariantType.UInt32) # Set the piece type to be sent to the line
+    
+    setValueCheck(spawn_in_U_x_n, True, ua.VariantType.Boolean) # Spawn the piece
+    
+    ValueCheck(U_x_ready_n, False) # Wait for the piece to be spawned    
+
+    setValueCheck(spawn_in_U_x_n, False, ua.VariantType.Boolean) # Reset the spawn flag
+    
+    client.disconnect()
+    
+def purge_shipping_lines(conn,client, line):
+    
+    cur = conn.cursor()
+    
+    U_x_empty = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.U_{line}_empty")
+    
+    if U_x_empty.get_value() == True:
+        return
+    
+    UnloadingOrderU_x = client.get_node(f"ns=4;s=|var|CODESYS Control Win V3 x64.Application.OPCUA_COMS.UnloadingOrderU_{line}")
+    
+    setValueCheck(UnloadingOrderU_x, True, ua.VariantType.Boolean)
+    ValueCheck(U_x_empty, True)
+    setValueCheck(UnloadingOrderU_x, False, ua.VariantType.Boolean)
+    
+    cur.execute("DELETE FROM ShippingQueue WHERE shipping_line = %s;", (line,))
+    
+    return
+    
+    
+    
+    
+    
+    
+
+def shipping_orders(conn, epoch):
+    
+    client = create_client()
+    client.connect()
+        
+    while True:
+        
+        time.sleep(1)
+    
+        now = time.time()
+        
+        current_day = int((now - epoch) // 60) + 1
+        
+        current_seconds = int((now - epoch) % 60)
+        
+        
+        if current_seconds > 50:
+            
+            
+            
+            purge_line_1_thread = Thread(target=purge_shipping_lines, args=(conn, client, 1), daemon=True)
+            purge_line_2_thread = Thread(target=purge_shipping_lines, args=(conn, client,  2), daemon=True)
+            purge_line_3_thread = Thread(target=purge_shipping_lines, args=(conn, client, 3), daemon=True)
+            purge_line_4_thread = Thread(target=purge_shipping_lines, args=(conn, client, 4), daemon=True)
+            
+            purge_line_1_thread.start()
+            purge_line_2_thread.start()
+            purge_line_3_thread.start()
+            purge_line_4_thread.start()
+            
+        
+        
+        if current_seconds > 38:    
+            continue
+        
+        cur = conn.cursor()
+        
+        
+        
+        line_occupancy_query = '''
+            SELECT SUM(CASE WHEN shipping_line = 1 then 1 else 0 end) as line_1,
+                    SUM(CASE WHEN shipping_line = 2 then 1 else 0 end) as line_2,
+                    SUM(CASE WHEN shipping_line = 3 then 1 else 0 end) as line_3,
+                    SUM(CASE WHEN shipping_line = 4 then 1 else 0 end) as line_4
+            FROM ShippingQueue'''
+        
+
+        cur.execute("SELECT order_id, final_piece_type, quantity FROM Orders WHERE delivery_status = 'Ready for delivery' AND due_date <= %s ORDER BY order_id", (current_day,))
+        orders = cur.fetchall()
+        #order = [order_id, final_piece_type, quantity]
+        
+        if orders == []: # if there is no order ready to ship
+            time.sleep(0.2)
+            continue
+        
+            
+        for order in orders:    
+            
+            print("Shipping order: ", order)
+            
+            quantity = order[2]
+            
+            required_lines = -(-quantity//6)
+            
+            print("quantity: ", quantity, "required_lines: ", required_lines)
+            
+            cur.execute(line_occupancy_query)
+            line_occupancy = cur.fetchone()
+            
+            if line_occupancy == []: # data base problems
+                raise Exception("Where are my lines?? :(")
+            
+            if line_occupancy.count(0) < required_lines: # if there are not enough lines available 
+                time.sleep(0.2)
+                continue
+            
+            selected_lines = [i for i, _ in zip([i+1 for i, line in enumerate(line_occupancy) if line == 0] , range(required_lines))]
+            
+            print("selected_lines: ", selected_lines)
+            
+            
+            for i in range(quantity):
+                i = i+1
+                print("Shipping piece: ", i, "of", quantity, "from order: ", order[0])
+                
+                piece_to_pop_query = '''
+                SELECT Warehouse.id, Pieces.piece_id
+                FROM Warehouse
+                JOIN Pieces ON Warehouse.piece_id = Pieces.piece_id
+                JOIN Orders ON Pieces.order_id = Orders.order_id
+                WHERE Warehouse.Warehouse = 2 AND Orders.order_id = %s
+                Order BY Pieces.piece_id ASC LIMIT 1;
+                '''
+                
+                cur.execute(piece_to_pop_query,(order[0],))
+                result = cur.fetchone()
+                # result = [warehouse_id, piece_id]
+                
+                if result == None:
+                    print("No pieces to pop")
+                    continue
+                
+                print("poped piece: ", result[1], " from W2 to U ", selected_lines[-(-i//6)-1])
+                
+                cur.execute("DELETE FROM Warehouse WHERE id = %s;", (result[0],))
+                
+                
+                pop_piece_for_delivery( selected_lines[-(-i//6)-1], order[1])
+                cur.execute("UPDATE ShippingQueue SET shipping_line = %s WHERE piece_id = %s;", (selected_lines[-(-i//6)-1], result[1],))
+            
+            cur.execute("UPDATE Orders SET delivery_status = 'Delivered', delivery_date = %s WHERE order_id = %s;", (current_day, order[0],))
+            
+            query = '''
+                UPDATE Orders
+                SET final_cost = (SELECT SUM(accumulated_cost + accumulated_time + accumulated_cost * (Orders.delivery_date - arrival_date)*0.01)
+                                    FROM Pieces
+                                    JOIN Orders ON Pieces.order_id = Orders.order_id
+                                    WHERE Pieces.order_id = %s)
+                WHERE order_id = %s;
+                '''
+            
+            cur.execute(query, (order[0], order[0]))
+            
+            cur.execute("SELECT due_date, delivery_date, early_penalty, late_penalty FROM Orders WHERE order_id = %s;", (order[0],))
+            due_date, delivery_date, early_penalty, late_penalty = cur.fetchone()
+            
+            if(delivery_date == due_date):
+                penalty = 0
+            elif(delivery_date > due_date):
+                penalty = (delivery_date - due_date) * late_penalty
+            elif(delivery_date < due_date):
+                penalty = (due_date - delivery_date) * early_penalty
+            
+            cur.execute("UPDATE Orders SET final_cost = final_cost + %s WHERE order_id = %s;", (penalty, order[0]))
+           
+
+def incoming_and_pop_piece():
+    
+    client = create_client()
+    client.connect()
+    
+    incoming_piece_w1_from_w2_trhread = Thread(target=incoming_piece_w1_from_w2, args=(client,), daemon=True)
+    incoming_piece_w1_from_w2_trhread.start()
+    
+    w2_piece_poper_thread = Thread(target=pop_piece_from_w2, args=(client,), daemon=True)
+    w2_piece_poper_thread.start()
+    
+
+def main():
+    conn = connect_to_postgresql() # Connect to the database
+
+    
+    global EPOCH
+    EPOCH = setEpoch(conn)
     
     updateDay()
-
-    client = Client("opc.tcp://127.0.0.1:4840") # Connect to the server
+    
+    client = create_client() # Connect to the OPCUA server
     global OPCUA_CLIENT
+    
     OPCUA_CLIENT = client
-    client.connect() # Connect to the server
-    #setup_machines_tools()
-
-    # Create a queue to store received requests to spawn pieces
-    spawn_queue_1 = queue.Queue()
-    spawn_queue_2 = queue.Queue()
-    # Create a thread to look for pieces to spawn
-    spawn_thread_1 = threading.Thread(target=spawn_pieces, args=(conn, client, spawn_queue_1), daemon=True)
-    spawn_thread_2 = threading.Thread(target=spawn_pieces, args=(conn, client, spawn_queue_2), daemon=True)
-    spawn_thread_1.start()
-    spawn_thread_2.start()
+        
+    client.connect()
     
-    counter_thread = threading.Thread(target=spawned_piece_counter, args=(conn, client), daemon=True)
-    counter_thread.start()
+    load_tools(client, conn)
+    
+    spawned_piece_counter_process = Process(target=spawned_piece_counter, daemon=True)
+    spawned_piece_counter_process.start()
+    
+    spawn_manager_process = Process(target=spawn_manager, daemon=True)
+    spawn_manager_process.start()
+    
+    incoming_w2_process = Process(target=incoming_w2, daemon=True)
+    incoming_w2_process.start()
 
-    # Main program loop
+    fill_Ops_table_process = Process(target=fill_OpsTable, daemon=True)
+    fill_Ops_table_process.start()
+
+    fill_lineRequests_process = Process(target=fill_LineRequests, daemon=True)
+    fill_lineRequests_process.start()
+
+    line_manager_process = Process(target=line_manager, daemon=True)
+    line_manager_process.start()
+    
+    incoming_and_pop_piece_process = Process(target=incoming_and_pop_piece, daemon=True)
+    incoming_and_pop_piece_process.start()
+    
+
+    shipping_thread = Thread(target=shipping_orders, args=(conn, EPOCH), daemon=True)
+    shipping_thread.start()
+    
     while True:
-        updateDay() #function will hang until the next second
+        updateDay()
         print("Day:", CURRENT_DAY, "Seconds:", CURRENT_SECONDS)
-    
-        look_for_pieces_toSpawn(conn, spawn_queue_1, spawn_queue_2)
-
-
-
+        
 
 if __name__ == "__main__":
-    
     try:
         main()
     except KeyboardInterrupt:
-        CRONUS = True
         print("Exiting...")
-        time.sleep(0.1)
+        time.sleep(0.2)
         OPCUA_CLIENT.disconnect()
-        print("Disconnected from opcua the server")
+        print("Disconnected from OPCUA server")
         exit(0)

@@ -12,6 +12,7 @@ def connect_to_postgresql():
         host = os.getenv('DATABASE_HOST')
         
         conn = psycopg2.connect(database=database, user=user, password=password, host=host)
+        conn.set_session(autocommit=True)
         print("Connection to PostgreSQL database successful.")
         return conn
     except psycopg2.Error as e:
