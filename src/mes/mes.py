@@ -17,7 +17,6 @@ CURRENT_DAY = 0
 CURRENT_SECONDS = 0
 DAY_LENGTH = 60
 LAST_SECOND = -1
-CRONUS = False #if true KILL ALL THE CHILDREN
 
 
 def updateDay():
@@ -620,7 +619,6 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        CRONUS = True
         print("Exiting...")
         time.sleep(0.2)
         OPCUA_CLIENT.disconnect()

@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 # Replace with your desired host and port
 HOST = '0.0.0.0'  # Listen on all interfaces
-PORT = 5000
+PORT = 24680
 
 EPOCH = 0
 CURRENT_DAY = 0

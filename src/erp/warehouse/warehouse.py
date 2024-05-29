@@ -80,7 +80,6 @@ def place_buy_order(conn, piece_type, quantity, current_day):
 
 def set_pieces_to_spawn(conn, current_day):
     cur = conn.cursor()
-    # TODO: set correct query 
     # cur.execute("SELECT incoming_id FROM Incoming WHERE arrival_date <= %s AND piece_status = 'Ordered' ORDER BY incoming_id ASC;", (current_day,))
     # cur.execute("SELECT incoming_id FROM Incoming WHERE piece_status = 'Ordered' ORDER BY incoming_id ASC;")
     # ids = cur.fetchall()

@@ -2,17 +2,17 @@ import socket
 from xml.etree import ElementTree as ET
 
 # Define server IP address and port
-SERVER_ADDRESS = ("localhost", 5000)  # Replace with actual server IP if needed
+SERVER_ADDRESS = ("localhost", 24680)  # Replace with actual server IP if needed
 PORT = SERVER_ADDRESS[1]  # Extract port from address
 
 # Create XML data
 xml_data = """
 <DOCUMENT>
 <Client NameId="Client AA"/>
-<Order Number="21" WorkPiece="P9" Quantity="8" DueDate="15" LatePen="10" EarlyPen="10"/>
-<Order Number="20" WorkPiece="P7" Quantity="8" DueDate="14" LatePen="10" EarlyPen="5"/>
-<Order Number="19" WorkPiece="P6" Quantity="8" DueDate="13" LatePen="10" EarlyPen="5"/>
-<Order Number="18" WorkPiece="P5" Quantity="8" DueDate="12" LatePen="10" EarlyPen="5"/>
+<Order Number="21" WorkPiece="P9" Quantity="15" DueDate="15" LatePen="10" EarlyPen="10"/>
+<Order Number="20" WorkPiece="P7" Quantity="15" DueDate="14" LatePen="10" EarlyPen="5"/>
+<Order Number="19" WorkPiece="P6" Quantity="15" DueDate="13" LatePen="10" EarlyPen="5"/>
+<Order Number="18" WorkPiece="P5" Quantity="15" DueDate="12" LatePen="10" EarlyPen="5"/>
 </DOCUMENT>
 """
 
